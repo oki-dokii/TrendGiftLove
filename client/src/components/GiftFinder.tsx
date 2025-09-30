@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -6,6 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Sparkles } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 const interests = [
   "Technology", "Books", "Music", "Art", "Sports", "Travel", 
@@ -22,11 +25,11 @@ const relationships = [
 ];
 
 const budgetRanges = [
-  { value: "free", label: "Free (DIY/Handmade)" },
-  { value: "low", label: "₹1 - ₹500" },
-  { value: "medium", label: "₹500 - ₹2,000" },
-  { value: "high", label: "₹2,000 - ₹5,000" },
-  { value: "premium", label: "₹5,000+" }
+  { value: "Under ₹500", label: "Under ₹500" },
+  { value: "₹500 - ₹2000", label: "₹500 - ₹2,000" },
+  { value: "₹2000 - ₹5000", label: "₹2,000 - ₹5,000" },
+  { value: "₹5000 - ₹10000", label: "₹5,000 - ₹10,000" },
+  { value: "₹10000+", label: "₹10,000+" }
 ];
 
 const occasions = [
@@ -34,6 +37,9 @@ const occasions = [
 ];
 
 export default function GiftFinder() {
+  const [, navigate] = useLocation();
+  const { toast } = useToast();
+  
   const [formData, setFormData] = useState({
     name: "",
     age: "",
@@ -58,14 +64,48 @@ export default function GiftFinder() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validate required fields
+    if (!formData.relationship || formData.interests.length === 0 || !formData.budget || !formData.occasion) {
+      toast({
+        title: "Missing Information",
+        description: "Please fill in relationship, at least one interest, budget, and occasion.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     setIsLoading(true);
     console.log('Gift finder form submitted:', formData);
     
-    // Simulate AI processing
-    setTimeout(() => {
+    try {
+      const response = await apiRequest("POST", "/api/recommendations", {
+        recipientName: formData.name || undefined,
+        recipientAge: formData.age ? parseInt(formData.age) : undefined,
+        relationship: formData.relationship,
+        interests: formData.interests,
+        personality: formData.personality || undefined,
+        budget: formData.budget,
+        occasion: formData.occasion,
+      });
+      
+      const data = await response.json();
+      
+      if (data.sessionId) {
+        navigate(`/results/${data.sessionId}`);
+      } else {
+        throw new Error("No session ID returned");
+      }
+    } catch (error) {
+      console.error("Error generating recommendations:", error);
+      toast({
+        title: "Error",
+        description: "Failed to generate recommendations. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
       setIsLoading(false);
-      alert('Gift recommendations would be generated here!');
-    }, 2000);
+    }
   };
 
   return (
