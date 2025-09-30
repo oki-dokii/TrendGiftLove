@@ -1,0 +1,61 @@
+I’m listing steps you should take in order. Each step includes the deliverable/acceptance criteria (no timelines — you can attach them later).
+
+Define scope & personas
+
+Deliverable: short doc with target users (e.g., young professionals, parents, spouses), top 3 use cases, prioritized features (MVP vs later).
+
+Design UX & core flows
+
+Deliverable: wireframes for: input form, results card, save-to-bucket, idea detail, message generator modal.
+
+Draft AI prompts & output schema
+
+Deliverable: tested prompts for idea generation + message templates that return consistent JSON.
+
+Build backend skeleton + DB
+
+Deliverable: auth, events, product and gift_ideas tables, basic API endpoints.
+
+Seed curated content
+
+Deliverable: 200–500 curated products/templates across occasions & budgets (manual curation improves initial quality).
+
+Integrate at least one product API / affiliate feed
+
+Deliverable: working connector to one reliable feed (product search endpoint + link).
+
+Add AI orchestration
+
+Deliverable: backend service calling GPT prompts, merging AI output with product results, returning final JSON to frontend.
+
+Frontend MVP
+
+Deliverable: functional UI where users enter inputs → get suggestions → save items.
+
+Implement bucket list + reminders
+
+Deliverable: users can save items, set reminders, and receive notification (email initially).
+
+Quality & safety check, legal review
+
+Deliverable: privacy policy, affiliate disclosure, review of scraping legality.
+
+Beta testing with users
+
+Deliverable: recruit 20–50 users for feedback; collect qualitative feedback & quantitative metrics.
+
+Iterate ranking & UX
+
+Deliverable: improved relevance scoring, A/B tested copy for suggestion cards, better templates.
+
+Add monetization & analytics
+
+Deliverable: affiliate links live, tracking clicks / saves / buys, revenue dashboard.
+
+Scale: multiple feeds, caching, price refresh workers
+
+Deliverable: reliable product freshness, price history, multi-source redundancy.
+
+Growth & integrations
+
+Deliverable: WhatsApp/Instagram sharing, local language support, personalized recommendations learned from user saves
