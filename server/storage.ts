@@ -11,7 +11,9 @@ import { randomUUID } from "crypto";
 export interface IStorage {
   // Gift Products
   getAllGiftProducts(): Promise<GiftProduct[]>;
+  getAllGifts(): Promise<GiftProduct[]>; // Alias for getAllGiftProducts
   getGiftProductById(id: string): Promise<GiftProduct | undefined>;
+  getGiftById(id: string): Promise<GiftProduct | undefined>; // Alias for getGiftProductById
   getGiftProductsByFilters(filters: {
     category?: string;
     interests?: string[];
@@ -23,7 +25,9 @@ export interface IStorage {
 
   // Gift Recommendations
   getRecommendationsBySession(sessionId: string): Promise<GiftRecommendation[]>;
+  getRecommendationById(id: string): Promise<GiftRecommendation | undefined>;
   createRecommendation(recommendation: InsertGiftRecommendation): Promise<GiftRecommendation>;
+  updateRecommendation(id: string, updates: Partial<GiftRecommendation>): Promise<GiftRecommendation | undefined>;
 
   // Wishlist
   getWishlistBySession(sessionId: string): Promise<WishlistItem[]>;
@@ -47,8 +51,16 @@ export class MemStorage implements IStorage {
     return Array.from(this.giftProducts.values());
   }
 
+  async getAllGifts(): Promise<GiftProduct[]> {
+    return this.getAllGiftProducts();
+  }
+
   async getGiftProductById(id: string): Promise<GiftProduct | undefined> {
     return this.giftProducts.get(id);
+  }
+
+  async getGiftById(id: string): Promise<GiftProduct | undefined> {
+    return this.getGiftProductById(id);
   }
 
   async getGiftProductsByFilters(filters: {
@@ -123,6 +135,10 @@ export class MemStorage implements IStorage {
     );
   }
 
+  async getRecommendationById(id: string): Promise<GiftRecommendation | undefined> {
+    return this.recommendations.get(id);
+  }
+
   async createRecommendation(
     insertRecommendation: InsertGiftRecommendation
   ): Promise<GiftRecommendation> {
@@ -145,6 +161,26 @@ export class MemStorage implements IStorage {
     };
     this.recommendations.set(id, recommendation);
     return recommendation;
+  }
+
+  async updateRecommendation(
+    id: string, 
+    updates: Partial<GiftRecommendation>
+  ): Promise<GiftRecommendation | undefined> {
+    const existing = this.recommendations.get(id);
+    if (!existing) {
+      return undefined;
+    }
+
+    const updated: GiftRecommendation = {
+      ...existing,
+      ...updates,
+      id, // Ensure id doesn't change
+      createdAt: existing.createdAt, // Preserve createdAt
+    };
+
+    this.recommendations.set(id, updated);
+    return updated;
   }
 
   // Wishlist
