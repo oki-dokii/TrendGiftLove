@@ -1,7 +1,32 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, jsonb, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, jsonb, timestamp, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+
+// DON'T DELETE THIS COMMENT
+// Blueprint reference: javascript_log_in_with_replit, javascript_database
+
+// Session storage table (required for Replit Auth)
+export const sessions = pgTable(
+  "sessions",
+  {
+    sid: varchar("sid").primaryKey(),
+    sess: jsonb("sess").notNull(),
+    expire: timestamp("expire").notNull(),
+  },
+  (table) => [index("IDX_session_expire").on(table.expire)],
+);
+
+// User storage table (required for Replit Auth)
+export const users = pgTable("users", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: varchar("email").unique(),
+  firstName: varchar("first_name"),
+  lastName: varchar("last_name"),
+  profileImageUrl: varchar("profile_image_url"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
 
 // Gift products database (curated)
 export const giftProducts = pgTable("gift_products", {
@@ -39,10 +64,11 @@ export const giftRecommendations = pgTable("gift_recommendations", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// User wishlists/buckets
+// User wishlists/buckets (bucket list for logged in users)
 export const wishlistItems = pgTable("wishlist_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  sessionId: varchar("session_id").notNull(), // anonymous users use sessionId
+  userId: varchar("user_id").references(() => users.id), // logged in users
+  sessionId: varchar("session_id"), // anonymous users use sessionId
   recommendationId: varchar("recommendation_id").references(() => giftRecommendations.id),
   productId: varchar("product_id").references(() => giftProducts.id),
   notes: text("notes"),
@@ -77,6 +103,9 @@ export const giftFinderRequestSchema = z.object({
 });
 
 // Export types
+export type User = typeof users.$inferSelect;
+export type UpsertUser = typeof users.$inferInsert;
+
 export type GiftProduct = typeof giftProducts.$inferSelect;
 export type InsertGiftProduct = z.infer<typeof insertGiftProductSchema>;
 

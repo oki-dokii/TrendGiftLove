@@ -13,8 +13,26 @@ import {
   calculateRelevanceScore 
 } from "./ai-service";
 import { randomUUID } from "crypto";
+import { setupAuth, isAuthenticated } from "./replitAuth";
+
+// DON'T DELETE THIS COMMENT
+// Blueprint reference: javascript_log_in_with_replit
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Setup authentication
+  await setupAuth(app);
+
+  // Auth routes
+  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      res.json(user);
+    } catch (error) {
+      console.error("Error fetching user:", error);
+      res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
   
   // POST /api/recommendations - Generate AI-powered gift recommendations
   app.post("/api/recommendations", async (req, res) => {
@@ -177,7 +195,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // POST /api/message - Generate personalized message for a gift
+  // POST /api/message - Generate personalized message for a gift (always regenerates)
   app.post("/api/message", async (req, res) => {
     try {
       const messageRequestSchema = z.object({
@@ -212,7 +230,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         occasion: recommendation.occasion || "",
       };
       
-      // Generate personalized message
+      // Generate personalized message (always regenerates)
       const message = await generatePersonalizedMessage(
         request,
         product,
@@ -240,16 +258,135 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: "Failed to generate message" });
     }
   });
+
+  // POST /api/recommendations/:sessionId/more - Generate more recommendations for existing session
+  app.post("/api/recommendations/:sessionId/more", async (req, res) => {
+    try {
+      const { sessionId } = req.params;
+      
+      // Get existing recommendations to retrieve session context
+      const existingRecs = await storage.getRecommendationsBySession(sessionId);
+      if (existingRecs.length === 0) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+      
+      // Use first recommendation to get search context
+      const firstRec = existingRecs[0];
+      const request = {
+        recipientName: firstRec.recipientName || undefined,
+        recipientAge: firstRec.recipientAge || undefined,
+        relationship: firstRec.relationship || "friend",
+        interests: firstRec.interests || [],
+        personality: firstRec.personality || undefined,
+        budget: firstRec.budget || "",
+        occasion: firstRec.occasion || "",
+      };
+      
+      // Get all products from storage
+      const allProducts = await storage.getAllGifts();
+      
+      // Filter products by budget
+      const budgetMap: Record<string, { min: number; max: number }> = {
+        "Under ₹500": { min: 0, max: 500 },
+        "₹500 - ₹2000": { min: 500, max: 2000 },
+        "₹2000 - ₹5000": { min: 2000, max: 5000 },
+        "₹5000 - ₹10000": { min: 5000, max: 10000 },
+        "₹10000+": { min: 10000, max: 1000000 },
+      };
+      
+      const budgetRange = budgetMap[request.budget] || { min: 0, max: 1000000 };
+      
+      // Get already recommended product IDs to exclude them
+      const existingProductIds = new Set(existingRecs.map(r => r.productId).filter(Boolean));
+      
+      // Pre-filter products by budget and exclude already recommended
+      const filteredProducts = allProducts
+        .filter(product => 
+          product.priceMax >= budgetRange.min && 
+          product.priceMin <= budgetRange.max &&
+          !existingProductIds.has(product.id)
+        )
+        .map(product => ({
+          product,
+          score: calculateRelevanceScore(request, product)
+        }))
+        .filter(item => item.score > 30)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 30)
+        .map(item => item.product);
+      
+      if (filteredProducts.length === 0) {
+        return res.status(404).json({ 
+          error: "No more suitable gifts found for this criteria" 
+        });
+      }
+      
+      // Generate AI recommendations
+      const aiResult = await generateGiftRecommendations(request, filteredProducts);
+      
+      // Save new recommendations to same session
+      const savedRecommendations = [];
+      for (const rec of aiResult.recommendations) {
+        const product = await storage.getGiftById(rec.productId);
+        if (!product || existingProductIds.has(product.id)) {
+          continue;
+        }
+        
+        const recommendation = await storage.createRecommendation({
+          sessionId,
+          recipientName: request.recipientName || null,
+          recipientAge: request.recipientAge || null,
+          relationship: request.relationship,
+          interests: request.interests,
+          personality: request.personality || null,
+          budget: request.budget,
+          occasion: request.occasion,
+          productId: rec.productId,
+          aiReasoning: rec.reasoning,
+          personalizedMessage: null,
+          relevanceScore: rec.relevanceScore,
+        });
+        
+        savedRecommendations.push({
+          ...recommendation,
+          product,
+        });
+      }
+      
+      res.json({
+        recommendations: savedRecommendations,
+      });
+      
+    } catch (error) {
+      console.error("Error generating more recommendations:", error);
+      res.status(500).json({ error: "Failed to generate more recommendations" });
+    }
+  });
   
-  // POST /api/wishlist - Add item to wishlist
-  app.post("/api/wishlist", async (req, res) => {
+  // POST /api/wishlist - Add item to wishlist (supports both authenticated users and anonymous sessions)
+  app.post("/api/wishlist", async (req: any, res) => {
     try {
       const wishlistSchema = insertWishlistItemSchema.extend({
-        sessionId: z.string(),
+        sessionId: z.string().optional(),
       });
       
       const data = wishlistSchema.parse(req.body);
-      const item = await storage.addToWishlist(data);
+      
+      // If user is authenticated, use userId instead of sessionId
+      const userId = req.isAuthenticated() ? req.user.claims.sub : null;
+      
+      // Validate that we have either userId or sessionId
+      if (!userId && !data.sessionId) {
+        return res.status(400).json({ error: "Either user authentication or session ID is required" });
+      }
+      
+      const itemData = {
+        ...data,
+        userId: userId || null,
+        sessionId: userId ? null : (data.sessionId || null),
+      };
+      
+      const item = await storage.addToWishlist(itemData);
       
       // Enrich with product details
       const product = item.productId 
@@ -277,7 +414,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // GET /api/wishlist/:sessionId - Get user's wishlist
+  // GET /api/wishlist/bucket - Get authenticated user's bucket list
+  app.get("/api/wishlist/bucket", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const items = await storage.getWishlistByUser(userId);
+      
+      // Enrich with product and recommendation details
+      const enriched = await Promise.all(
+        items.map(async (item) => {
+          const product = item.productId 
+            ? await storage.getGiftById(item.productId) 
+            : null;
+          const recommendation = item.recommendationId
+            ? await storage.getRecommendationById(item.recommendationId)
+            : null;
+          return {
+            ...item,
+            product,
+            recommendation,
+          };
+        })
+      );
+      
+      res.json(enriched);
+    } catch (error) {
+      console.error("Error fetching bucket list:", error);
+      res.status(500).json({ error: "Failed to fetch bucket list" });
+    }
+  });
+  
+  // GET /api/wishlist/:sessionId - Get session wishlist (anonymous users)
   app.get("/api/wishlist/:sessionId", async (req, res) => {
     try {
       const { sessionId } = req.params;

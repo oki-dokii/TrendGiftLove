@@ -1,14 +1,29 @@
 import {
+  type User,
+  type UpsertUser,
   type GiftProduct,
   type InsertGiftProduct,
   type GiftRecommendation,
   type InsertGiftRecommendation,
   type WishlistItem,
   type InsertWishlistItem,
+  giftProducts,
+  giftRecommendations,
+  wishlistItems,
+  users,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
+import { db } from "./db";
+import { eq, or } from "drizzle-orm";
+
+// DON'T DELETE THIS COMMENT
+// Blueprint reference: javascript_database
 
 export interface IStorage {
+  // User operations (required for Replit Auth)
+  getUser(id: string): Promise<User | undefined>;
+  upsertUser(user: UpsertUser): Promise<User>;
+
   // Gift Products
   getAllGiftProducts(): Promise<GiftProduct[]>;
   getAllGifts(): Promise<GiftProduct[]>; // Alias for getAllGiftProducts
@@ -31,24 +46,36 @@ export interface IStorage {
 
   // Wishlist
   getWishlistBySession(sessionId: string): Promise<WishlistItem[]>;
+  getWishlistByUser(userId: string): Promise<WishlistItem[]>;
   addToWishlist(item: InsertWishlistItem): Promise<WishlistItem>;
   removeFromWishlist(id: string): Promise<boolean>;
 }
 
-export class MemStorage implements IStorage {
-  private giftProducts: Map<string, GiftProduct>;
-  private recommendations: Map<string, GiftRecommendation>;
-  private wishlistItems: Map<string, WishlistItem>;
+export class DatabaseStorage implements IStorage {
+  // User operations (required for Replit Auth)
+  async getUser(id: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
+  }
 
-  constructor() {
-    this.giftProducts = new Map();
-    this.recommendations = new Map();
-    this.wishlistItems = new Map();
+  async upsertUser(userData: UpsertUser): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values(userData)
+      .onConflictDoUpdate({
+        target: users.id,
+        set: {
+          ...userData,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return user;
   }
 
   // Gift Products
   async getAllGiftProducts(): Promise<GiftProduct[]> {
-    return Array.from(this.giftProducts.values());
+    return await db.select().from(giftProducts);
   }
 
   async getAllGifts(): Promise<GiftProduct[]> {
@@ -56,7 +83,8 @@ export class MemStorage implements IStorage {
   }
 
   async getGiftProductById(id: string): Promise<GiftProduct | undefined> {
-    return this.giftProducts.get(id);
+    const [product] = await db.select().from(giftProducts).where(eq(giftProducts.id, id));
+    return product;
   }
 
   async getGiftById(id: string): Promise<GiftProduct | undefined> {
@@ -70,7 +98,8 @@ export class MemStorage implements IStorage {
     occasion?: string;
     relationship?: string;
   }): Promise<GiftProduct[]> {
-    let products = Array.from(this.giftProducts.values());
+    let query = db.select().from(giftProducts);
+    let products = await query;
 
     if (filters.category) {
       products = products.filter(p => p.category === filters.category);
@@ -113,101 +142,80 @@ export class MemStorage implements IStorage {
   }
 
   async createGiftProduct(insertProduct: InsertGiftProduct): Promise<GiftProduct> {
-    const id = randomUUID();
-    const product: GiftProduct = {
-      ...insertProduct,
-      id,
-      ageGroup: insertProduct.ageGroup ?? null,
-      relationship: insertProduct.relationship ?? null,
-      personality: insertProduct.personality ?? null,
-      affiliateLink: insertProduct.affiliateLink ?? null,
-      imageUrl: insertProduct.imageUrl ?? null,
-      tags: insertProduct.tags ?? null,
-    };
-    this.giftProducts.set(id, product);
+    const [product] = await db
+      .insert(giftProducts)
+      .values(insertProduct)
+      .returning();
     return product;
   }
 
   // Gift Recommendations
   async getRecommendationsBySession(sessionId: string): Promise<GiftRecommendation[]> {
-    return Array.from(this.recommendations.values()).filter(
-      r => r.sessionId === sessionId
-    );
+    return await db
+      .select()
+      .from(giftRecommendations)
+      .where(eq(giftRecommendations.sessionId, sessionId));
   }
 
   async getRecommendationById(id: string): Promise<GiftRecommendation | undefined> {
-    return this.recommendations.get(id);
+    const [recommendation] = await db
+      .select()
+      .from(giftRecommendations)
+      .where(eq(giftRecommendations.id, id));
+    return recommendation;
   }
 
   async createRecommendation(
     insertRecommendation: InsertGiftRecommendation
   ): Promise<GiftRecommendation> {
-    const id = randomUUID();
-    const recommendation: GiftRecommendation = {
-      ...insertRecommendation,
-      id,
-      recipientName: insertRecommendation.recipientName ?? null,
-      recipientAge: insertRecommendation.recipientAge ?? null,
-      relationship: insertRecommendation.relationship ?? null,
-      interests: insertRecommendation.interests ?? null,
-      personality: insertRecommendation.personality ?? null,
-      budget: insertRecommendation.budget ?? null,
-      occasion: insertRecommendation.occasion ?? null,
-      productId: insertRecommendation.productId ?? null,
-      aiReasoning: insertRecommendation.aiReasoning ?? null,
-      personalizedMessage: insertRecommendation.personalizedMessage ?? null,
-      relevanceScore: insertRecommendation.relevanceScore ?? null,
-      createdAt: new Date(),
-    };
-    this.recommendations.set(id, recommendation);
+    const [recommendation] = await db
+      .insert(giftRecommendations)
+      .values(insertRecommendation)
+      .returning();
     return recommendation;
   }
 
   async updateRecommendation(
-    id: string, 
+    id: string,
     updates: Partial<GiftRecommendation>
   ): Promise<GiftRecommendation | undefined> {
-    const existing = this.recommendations.get(id);
-    if (!existing) {
-      return undefined;
-    }
-
-    const updated: GiftRecommendation = {
-      ...existing,
-      ...updates,
-      id, // Ensure id doesn't change
-      createdAt: existing.createdAt, // Preserve createdAt
-    };
-
-    this.recommendations.set(id, updated);
+    const [updated] = await db
+      .update(giftRecommendations)
+      .set(updates)
+      .where(eq(giftRecommendations.id, id))
+      .returning();
     return updated;
   }
 
   // Wishlist
   async getWishlistBySession(sessionId: string): Promise<WishlistItem[]> {
-    return Array.from(this.wishlistItems.values()).filter(
-      item => item.sessionId === sessionId
-    );
+    return await db
+      .select()
+      .from(wishlistItems)
+      .where(eq(wishlistItems.sessionId, sessionId));
+  }
+
+  async getWishlistByUser(userId: string): Promise<WishlistItem[]> {
+    return await db
+      .select()
+      .from(wishlistItems)
+      .where(eq(wishlistItems.userId, userId));
   }
 
   async addToWishlist(insertItem: InsertWishlistItem): Promise<WishlistItem> {
-    const id = randomUUID();
-    const item: WishlistItem = {
-      ...insertItem,
-      id,
-      recommendationId: insertItem.recommendationId ?? null,
-      productId: insertItem.productId ?? null,
-      notes: insertItem.notes ?? null,
-      reminder: insertItem.reminder ?? null,
-      createdAt: new Date(),
-    };
-    this.wishlistItems.set(id, item);
+    const [item] = await db
+      .insert(wishlistItems)
+      .values(insertItem)
+      .returning();
     return item;
   }
 
   async removeFromWishlist(id: string): Promise<boolean> {
-    return this.wishlistItems.delete(id);
+    const result = await db
+      .delete(wishlistItems)
+      .where(eq(wishlistItems.id, id));
+    return result.rowCount !== null && result.rowCount > 0;
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();

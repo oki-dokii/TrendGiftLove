@@ -8,6 +8,7 @@ import { Heart, ArrowLeft, Sparkles, IndianRupee, MessageSquare } from "lucide-r
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
+import { useAuth } from "@/hooks/useAuth";
 
 type Recommendation = {
   id: string;
@@ -35,6 +36,7 @@ export default function Results() {
   const sessionId = params?.sessionId;
   const { toast } = useToast();
   const [generatingMessageFor, setGeneratingMessageFor] = useState<string | null>(null);
+  const { isAuthenticated } = useAuth();
 
   // Fetch recommendations
   const { data: recommendations, isLoading } = useQuery<Recommendation[]>({
@@ -42,25 +44,55 @@ export default function Results() {
     enabled: !!sessionId,
   });
 
-  // Add to wishlist mutation
-  const addToWishlistMutation = useMutation({
-    mutationFn: async (recommendationId: string) => {
-      return await apiRequest("POST", "/api/wishlist", {
-        sessionId,
-        recommendationId,
-      });
+  // Load more recommendations mutation
+  const loadMoreMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("POST", `/api/recommendations/${sessionId}/more`, {});
     },
     onSuccess: () => {
       toast({
-        title: "Added to Wishlist",
-        description: "Gift saved to your wishlist successfully!",
+        title: "More Ideas Added",
+        description: "We've found more gift recommendations for you!",
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/wishlist", sessionId] });
+      queryClient.invalidateQueries({ queryKey: [`/api/recommendations/${sessionId}`] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "No More Ideas",
+        description: error.message || "We couldn't find any more suitable gifts.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Add to wishlist/bucket mutation (supports both authenticated and anonymous users)
+  const addToWishlistMutation = useMutation({
+    mutationFn: async (recommendationId: string) => {
+      const payload = isAuthenticated
+        ? { recommendationId } // Authenticated users don't need sessionId
+        : { sessionId, recommendationId }; // Anonymous users use sessionId
+      
+      return await apiRequest("POST", "/api/wishlist", payload);
+    },
+    onSuccess: () => {
+      toast({
+        title: isAuthenticated ? "Added to Bucket List" : "Added to Wishlist",
+        description: isAuthenticated 
+          ? "Gift saved to your bucket list and will persist across sessions!" 
+          : "Gift saved to your wishlist successfully!",
+      });
+      
+      // Invalidate the appropriate query
+      if (isAuthenticated) {
+        queryClient.invalidateQueries({ queryKey: ["/api/wishlist/bucket"] });
+      } else {
+        queryClient.invalidateQueries({ queryKey: ["/api/wishlist", sessionId] });
+      }
     },
     onError: () => {
       toast({
         title: "Error",
-        description: "Failed to add gift to wishlist",
+        description: isAuthenticated ? "Failed to add gift to bucket list" : "Failed to add gift to wishlist",
         variant: "destructive",
       });
     },
@@ -224,27 +256,25 @@ export default function Results() {
                     data-testid={`button-save-${rec.id}`}
                   >
                     <Heart className="mr-2 h-4 w-4" />
-                    Save to Wishlist
+                    {isAuthenticated ? "Save to Bucket List" : "Save to Wishlist"}
                   </Button>
-                  {!rec.personalizedMessage && (
-                    <Button
-                      variant="outline"
-                      onClick={() => handleGenerateMessage(rec.id)}
-                      disabled={generatingMessageFor === rec.id}
-                      data-testid={`button-generate-message-${rec.id}`}
-                    >
-                      {generatingMessageFor === rec.id ? (
-                        <span className="flex items-center gap-2">
-                          <span className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                          Generating...
-                        </span>
-                      ) : (
-                        <>
-                          <MessageSquare className="h-4 w-4" />
-                        </>
-                      )}
-                    </Button>
-                  )}
+                  <Button
+                    variant="outline"
+                    onClick={() => handleGenerateMessage(rec.id)}
+                    disabled={generatingMessageFor === rec.id}
+                    data-testid={`button-generate-message-${rec.id}`}
+                  >
+                    {generatingMessageFor === rec.id ? (
+                      <span className="flex items-center gap-2">
+                        <span className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        Generating...
+                      </span>
+                    ) : (
+                      <>
+                        <MessageSquare className="h-4 w-4" />
+                      </>
+                    )}
+                  </Button>
                 </CardFooter>
               </Card>
             ))}
@@ -264,6 +294,30 @@ export default function Results() {
               </Button>
             </CardFooter>
           </Card>
+        )}
+
+        {recommendations && recommendations.length > 0 && (
+          <div className="flex justify-center mt-8">
+            <Button
+              variant="outline"
+              size="lg"
+              onClick={() => loadMoreMutation.mutate()}
+              disabled={loadMoreMutation.isPending}
+              data-testid="button-load-more"
+            >
+              {loadMoreMutation.isPending ? (
+                <>
+                  <span className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2" />
+                  Finding More Ideas...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="mr-2 h-5 w-5" />
+                  Load More Ideas
+                </>
+              )}
+            </Button>
+          </div>
         )}
       </div>
     </div>
