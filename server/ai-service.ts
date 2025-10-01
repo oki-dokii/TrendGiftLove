@@ -6,7 +6,7 @@ import type { GiftFinderRequest, GiftProduct } from "@shared/schema";
 // Blueprint reference: javascript_gemini
 
 const ai = new GoogleGenAI({ 
-  apiKey: process.env.GOOGLE_API_KEY || "" 
+  apiKey: process.env.GEMINI_API_KEY || "" 
 });
 
 // AI-powered gift recommendations using Gemini
