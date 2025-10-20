@@ -37,6 +37,7 @@ export interface IStorage {
     relationship?: string;
   }): Promise<GiftProduct[]>;
   createGiftProduct(product: InsertGiftProduct): Promise<GiftProduct>;
+  updateGiftProduct(id: string, updates: Partial<GiftProduct>): Promise<GiftProduct | undefined>;
 
   // Gift Recommendations
   getRecommendationsBySession(sessionId: string): Promise<GiftRecommendation[]>;
@@ -147,6 +148,15 @@ export class DatabaseStorage implements IStorage {
       .values(insertProduct)
       .returning();
     return product;
+  }
+
+  async updateGiftProduct(id: string, updates: Partial<GiftProduct>): Promise<GiftProduct | undefined> {
+    const [updated] = await db
+      .update(giftProducts)
+      .set(updates)
+      .where(eq(giftProducts.id, id))
+      .returning();
+    return updated;
   }
 
   // Gift Recommendations
