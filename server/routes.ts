@@ -354,6 +354,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
+      // If no new recommendations were generated, return 404
+      if (savedRecommendations.length === 0) {
+        return res.status(404).json({ 
+          error: "No more suitable gifts found for this criteria" 
+        });
+      }
+      
       res.json({
         recommendations: savedRecommendations,
       });
