@@ -44,6 +44,8 @@ export const giftProducts = pgTable("gift_products", {
   affiliateLink: text("affiliate_link"),
   imageUrl: text("image_url"),
   tags: text("tags").array(),
+  flipkartProductId: text("flipkart_product_id"), // Link to real Flipkart product
+  flipkartUrl: text("flipkart_url"), // Direct link to buy on Flipkart
 });
 
 // Gift recommendations (AI-generated for users)

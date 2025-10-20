@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Heart, ArrowLeft, Sparkles, IndianRupee, MessageSquare } from "lucide-react";
+import { Heart, ArrowLeft, Sparkles, IndianRupee, MessageSquare, ExternalLink, ShoppingCart } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
@@ -27,6 +27,8 @@ type Recommendation = {
     occasions: string[];
     tags: string[] | null;
     imageUrl: string | null;
+    flipkartProductId?: string | null;
+    flipkartUrl?: string | null;
   };
 };
 
@@ -247,34 +249,50 @@ export default function Results() {
                   )}
                 </CardContent>
 
-                <CardFooter className="flex gap-2">
-                  <Button
-                    variant="default"
-                    className="flex-1"
-                    onClick={() => addToWishlistMutation.mutate(rec.id)}
-                    disabled={addToWishlistMutation.isPending}
-                    data-testid={`button-save-${rec.id}`}
-                  >
-                    <Heart className="mr-2 h-4 w-4" />
-                    {isAuthenticated ? "Save to Bucket List" : "Save to Wishlist"}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => handleGenerateMessage(rec.id)}
-                    disabled={generatingMessageFor === rec.id}
-                    data-testid={`button-generate-message-${rec.id}`}
-                  >
-                    {generatingMessageFor === rec.id ? (
-                      <span className="flex items-center gap-2">
-                        <span className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                        Generating...
-                      </span>
-                    ) : (
-                      <>
-                        <MessageSquare className="h-4 w-4" />
-                      </>
-                    )}
-                  </Button>
+                <CardFooter className="flex flex-col gap-2">
+                  {rec.product.flipkartUrl && (
+                    <Button
+                      variant="default"
+                      className="w-full"
+                      asChild
+                      data-testid={`button-buy-flipkart-${rec.id}`}
+                    >
+                      <a href={rec.product.flipkartUrl} target="_blank" rel="noopener noreferrer">
+                        <ShoppingCart className="mr-2 h-4 w-4" />
+                        Buy on Flipkart
+                        <ExternalLink className="ml-2 h-3 w-3" />
+                      </a>
+                    </Button>
+                  )}
+                  <div className="flex gap-2 w-full">
+                    <Button
+                      variant={rec.product.flipkartUrl ? "outline" : "default"}
+                      className="flex-1"
+                      onClick={() => addToWishlistMutation.mutate(rec.id)}
+                      disabled={addToWishlistMutation.isPending}
+                      data-testid={`button-save-${rec.id}`}
+                    >
+                      <Heart className="mr-2 h-4 w-4" />
+                      {isAuthenticated ? "Save to Bucket List" : "Save to Wishlist"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => handleGenerateMessage(rec.id)}
+                      disabled={generatingMessageFor === rec.id}
+                      data-testid={`button-generate-message-${rec.id}`}
+                    >
+                      {generatingMessageFor === rec.id ? (
+                        <span className="flex items-center gap-2">
+                          <span className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                          Generating...
+                        </span>
+                      ) : (
+                        <>
+                          <MessageSquare className="h-4 w-4" />
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </CardFooter>
               </Card>
             ))}

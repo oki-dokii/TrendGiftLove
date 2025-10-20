@@ -14,6 +14,7 @@ import {
 } from "./ai-service";
 import { randomUUID } from "crypto";
 import { setupAuth, isAuthenticated } from "./replitAuth";
+import { searchGiftProducts, searchFlipkartProducts } from "./flipkart-service";
 
 // DON'T DELETE THIS COMMENT
 // Blueprint reference: javascript_log_in_with_replit
@@ -488,6 +489,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error removing from wishlist:", error);
       res.status(500).json({ error: "Failed to remove from wishlist" });
+    }
+  });
+
+  // GET /api/flipkart/search - Search Flipkart products via RapidAPI
+  app.get("/api/flipkart/search", async (req, res) => {
+    try {
+      const searchSchema = z.object({
+        query: z.string(),
+        page: z.string().regex(/^\d+$/).transform(Number).optional().default('1'),
+        sortBy: z.enum(['popularity', 'price_low_to_high', 'price_high_to_low', 'relevance']).optional().default('popularity'),
+      });
+      
+      const { query, page, sortBy } = searchSchema.parse(req.query);
+      
+      const results = await searchFlipkartProducts(query, page, sortBy);
+      
+      res.json(results);
+    } catch (error) {
+      console.error("Error searching Flipkart:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          error: "Invalid query parameters", 
+          details: error.errors 
+        });
+      }
+      res.status(500).json({ 
+        error: "Failed to search Flipkart products",
+        message: error instanceof Error ? error.message : "Unknown error"
+      });
     }
   });
 
