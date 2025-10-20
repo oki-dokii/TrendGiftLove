@@ -79,8 +79,9 @@ Preferred communication style: Simple, everyday language.
 ### External Dependencies
 
 **AI Services:**
-- **OpenAI API**: GPT model for gift recommendation reasoning and personalized message generation
-- API key required via environment variable `OPENAI_API_KEY`
+- **Google Gemini API**: Gemini 2.5 Flash model for gift recommendation reasoning and personalized message generation
+- API key required via environment variable `GEMINI_API_KEY`
+- Implemented with timeout handling and rule-based fallback for reliability
 
 **Database:**
 - **PostgreSQL** (via Neon serverless): Primary production database
@@ -100,18 +101,30 @@ Preferred communication style: Simple, everyday language.
 - **Replit-specific plugins**: Runtime error overlay, cartographer, dev banner
 - **ESBuild**: Backend bundling for production builds
 
+**E-Commerce Integration:**
+- **RapidAPI - Real-Time Flipkart API**: Provides access to live Flipkart product catalog
+- API key required via environment variable `RAPIDAPI_KEY`
+- Features: Product search, pricing, reviews, product URLs for direct purchasing
+- Enriches curated gift recommendations with actual buyable products
+
 **Future Integration Points:**
-- Affiliate product APIs (planned, not yet implemented)
+- Amazon Product Advertising API for Amazon product links
 - Email notification service for reminders (planned)
 - Product image hosting/CDN service
 
-### Session Management
+### Authentication & Session Management
 
-**Approach:**
-- Session-based tracking without user authentication (anonymous users)
+**Authentication:**
+- **Replit Auth integration**: Full user authentication with PostgreSQL session storage
+- Supports both authenticated users and anonymous sessions
+- Authenticated users get persistent "bucket list" across sessions
+- Anonymous users use session-based wishlists (temporary)
+
+**Session Management:**
 - Session IDs generated client-side using `nanoid`
 - Sessions group recommendations and wishlist items per search
-- No persistent user accounts in MVP
+- Dual storage: userId for authenticated, sessionId for anonymous
+- Backend validates presence of either userId or sessionId for wishlist operations
 
 ### Content Strategy
 
@@ -121,3 +134,28 @@ Preferred communication style: Simple, everyday language.
 - Products tagged by: interests, occasions, age groups, personality types, relationships
 - Price ranges from ₹0 (DIY ideas) to ₹10,000+
 - Categories include: Technology, Books, Art, Sports, Fashion, Home, etc.
+- **Flipkart Integration**: Products can be enriched with real Flipkart product links
+  - Schema includes `flipkartProductId` and `flipkartUrl` fields
+  - Enrichment utility available at `server/enrich-flipkart.ts`
+  - Products with Flipkart links display "Buy on Flipkart" buttons in UI
+
+## Recent Changes (October 2025)
+
+### Flipkart E-Commerce Integration
+- Added RapidAPI integration for real-time Flipkart product search
+- Created `server/flipkart-service.ts` with product search functions
+- Updated database schema to store Flipkart product IDs and URLs
+- Enhanced UI to show "Buy on Flipkart" buttons when product links are available
+- Built enrichment utility to automatically link curated gifts with real Flipkart products
+
+### Key Features
+1. **Product Search API**: `/api/flipkart/search` endpoint for searching Flipkart products
+2. **Auto-Enrichment**: Utility script to match curated gifts with Flipkart inventory
+3. **Seamless Purchase Flow**: Direct links from recommendations to Flipkart product pages
+4. **Price Matching**: Search results filtered by price range to match gift budgets
+
+### How to Use Flipkart Integration
+1. Ensure `RAPIDAPI_KEY` is set in environment secrets
+2. Products with `flipkartUrl` automatically show "Buy on Flipkart" button
+3. Run enrichment script to link more products: `tsx server/enrich-flipkart.ts`
+4. Use `/api/flipkart/search` endpoint to manually search products
