@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Home from "@/pages/Home";
 import Results from "@/pages/Results";
 import Auth from "@/pages/Auth";
+import Wishlist from "@/pages/Wishlist";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -13,6 +14,7 @@ function Router() {
     <Switch>
       <Route path="/" component={Home} />
       <Route path="/auth" component={Auth} />
+      <Route path="/wishlist" component={Wishlist} />
       <Route path="/results/:sessionId" component={Results} />
       <Route component={NotFound} />
     </Switch>
