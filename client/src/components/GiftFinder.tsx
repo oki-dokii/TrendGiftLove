@@ -79,6 +79,7 @@ export default function GiftFinder() {
     console.log('Gift finder form submitted:', formData);
     
     try {
+      // This now uses Amazon products with AI-generated suggestions
       const response = await apiRequest("POST", "/api/recommendations", {
         recipientName: formData.name || undefined,
         recipientAge: formData.age ? parseInt(formData.age) : undefined,

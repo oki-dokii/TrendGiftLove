@@ -10,7 +10,8 @@ import { z } from "zod";
 import { 
   generateGiftRecommendations, 
   generatePersonalizedMessage,
-  calculateRelevanceScore 
+  calculateRelevanceScore,
+  generateAIProductSuggestions 
 } from "./ai-service";
 import { randomUUID } from "crypto";
 import { setupAuth, isAuthenticated } from "./replitAuth";
@@ -35,82 +36,138 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // POST /api/recommendations - Generate AI-powered gift recommendations
+  // POST /api/amazon-recommendations - NEW: AI generates product ideas + searches Amazon
+  app.post("/api/amazon-recommendations", async (req, res) => {
+    try {
+      // Validate request body
+      const request = giftFinderRequestSchema.parse(req.body);
+      
+      // Generate AI product suggestions and search Amazon
+      const recommendations = await generateAIProductSuggestions(request);
+      
+      if (recommendations.length === 0) {
+        return res.status(404).json({ 
+          error: "No suitable gifts found on Amazon for this criteria" 
+        });
+      }
+      
+      // Create a session ID for this recommendation set
+      const sessionId = randomUUID();
+      
+      // Return recommendations directly (no storage for Amazon products yet)
+      const enrichedRecommendations = recommendations.map((rec, index) => ({
+        id: `amazon-${sessionId}-${index}`,
+        sessionId,
+        recipientName: request.recipientName || null,
+        recipientAge: request.recipientAge || null,
+        relationship: request.relationship,
+        interests: request.interests,
+        personality: request.personality || null,
+        budget: request.budget,
+        occasion: request.occasion,
+        aiReasoning: rec.aiReasoning,
+        relevanceScore: rec.relevanceScore,
+        amazonProduct: rec.amazonProduct,
+      }));
+      
+      res.json({
+        sessionId,
+        recommendations: enrichedRecommendations,
+      });
+      
+    } catch (error) {
+      console.error("Error generating Amazon recommendations:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          error: "Invalid request data", 
+          details: error.errors 
+        });
+      }
+      res.status(500).json({ error: "Failed to generate recommendations" });
+    }
+  });
+  
+  // POST /api/recommendations - Generate AI-powered gift recommendations with AMAZON PRODUCTS
   app.post("/api/recommendations", async (req, res) => {
     try {
       // Validate request body
       const request = giftFinderRequestSchema.parse(req.body);
       
-      // Get all products from storage
-      const allProducts = await storage.getAllGifts();
+      // NEW: Use AI to generate product suggestions and search Amazon
+      const amazonRecommendations = await generateAIProductSuggestions(request);
       
-      // Filter products by budget and basic criteria
-      const budgetMap: Record<string, { min: number; max: number }> = {
-        "Under ₹500": { min: 0, max: 500 },
-        "₹500 - ₹2000": { min: 500, max: 2000 },
-        "₹2000 - ₹5000": { min: 2000, max: 5000 },
-        "₹5000 - ₹10000": { min: 5000, max: 10000 },
-        "₹10000+": { min: 10000, max: 1000000 },
-      };
-      
-      const budgetRange = budgetMap[request.budget] || { min: 0, max: 1000000 };
-      
-      // Pre-filter products by budget and calculate relevance scores
-      const filteredProducts = allProducts
-        .filter(product => 
-          product.priceMax >= budgetRange.min && 
-          product.priceMin <= budgetRange.max
-        )
-        .map(product => ({
-          product,
-          score: calculateRelevanceScore(request, product)
-        }))
-        .filter(item => item.score > 30) // Only keep reasonably relevant products
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 30) // Limit to top 30 for AI to consider
-        .map(item => item.product);
-      
-      if (filteredProducts.length === 0) {
+      if (amazonRecommendations.length === 0) {
         return res.status(404).json({ 
-          error: "No suitable gifts found for this criteria" 
+          error: "No suitable gifts found on Amazon for this criteria" 
         });
       }
-      
-      // Generate AI recommendations
-      const aiResult = await generateGiftRecommendations(request, filteredProducts);
       
       // Create a session ID for this recommendation set
       const sessionId = randomUUID();
       
-      // Save recommendations to storage (validate product exists first)
+      // Store Amazon recommendations in database
+      // Create minimal gift_product records for Amazon products so they can be fetched later
       const savedRecommendations = [];
-      for (const rec of aiResult.recommendations) {
-        // Validate product exists in storage before creating recommendation
-        const product = await storage.getGiftById(rec.productId);
-        if (!product) {
-          console.warn(`AI recommended non-existent product: ${rec.productId}`);
-          continue; // Skip invalid products
+      for (const rec of amazonRecommendations) {
+        try {
+          // Create a minimal product record for this Amazon product
+          const amazonProduct = await storage.createGiftProduct({
+            name: rec.amazonProduct.title,
+            description: rec.aiReasoning,
+            category: "Amazon Product",
+            priceMin: parseFloat(rec.amazonProduct.price.replace(/[^0-9.]/g, '')) || 0,
+            priceMax: parseFloat(rec.amazonProduct.price.replace(/[^0-9.]/g, '')) || 0,
+            interests: request.interests,
+            occasions: [request.occasion],
+            relationship: [request.relationship],
+            tags: [
+              rec.amazonProduct.isPrime ? "Prime" : "",
+              rec.amazonProduct.isBestSeller ? "Best Seller" : "",
+              rec.amazonProduct.isAmazonChoice ? "Amazon's Choice" : "",
+            ].filter(Boolean),
+            imageUrl: rec.amazonProduct.imageUrl,
+            flipkartUrl: null, // Not using Flipkart for these
+          });
+          
+          // Update the product with Amazon-specific data (these fields should be in the schema)
+          const updatedProduct = await storage.updateGiftProduct(amazonProduct.id, {
+            flipkartUrl: rec.amazonProduct.url, // Store Amazon URL in flipkartUrl field for now
+          });
+          
+          // Create recommendation pointing to this product
+          const recommendation = await storage.createRecommendation({
+            sessionId,
+            recipientName: request.recipientName || null,
+            recipientAge: request.recipientAge || null,
+            relationship: request.relationship,
+            interests: request.interests,
+            personality: request.personality || null,
+            budget: request.budget,
+            occasion: request.occasion,
+            productId: amazonProduct.id,
+            aiReasoning: rec.aiReasoning,
+            personalizedMessage: null, // Generated on demand
+            relevanceScore: rec.relevanceScore,
+          });
+          
+          // Format for frontend with Amazon product data
+          savedRecommendations.push({
+            ...recommendation,
+            product: {
+              ...(updatedProduct || amazonProduct),
+              amazonUrl: rec.amazonProduct.url,
+              amazonPrice: rec.amazonProduct.price,
+              amazonRating: rec.amazonProduct.rating,
+              amazonNumRatings: rec.amazonProduct.numRatings,
+              isPrime: rec.amazonProduct.isPrime,
+              isBestSeller: rec.amazonProduct.isBestSeller,
+              isAmazonChoice: rec.amazonProduct.isAmazonChoice,
+            },
+          });
+        } catch (error) {
+          console.error("Error saving Amazon recommendation:", error);
+          // Continue with other recommendations
         }
-        
-        const recommendation = await storage.createRecommendation({
-          sessionId,
-          recipientName: request.recipientName || null,
-          recipientAge: request.recipientAge || null,
-          relationship: request.relationship,
-          interests: request.interests,
-          personality: request.personality || null,
-          budget: request.budget,
-          occasion: request.occasion,
-          productId: rec.productId,
-          aiReasoning: rec.reasoning,
-          personalizedMessage: null, // Generated on demand
-          relevanceScore: rec.relevanceScore,
-        });
-        
-        savedRecommendations.push({
-          ...recommendation,
-          product,
-        });
       }
       
       res.json({
@@ -182,6 +239,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const product = rec.productId 
             ? await storage.getGiftById(rec.productId) 
             : null;
+          
+          // For Amazon products, enrich with Amazon-specific data
+          if (product && product.category === "Amazon Product") {
+            return {
+              ...rec,
+              product: {
+                ...product,
+                amazonUrl: product.flipkartUrl, // We stored Amazon URL in flipkartUrl field
+                amazonPrice: `$${product.priceMin.toFixed(2)}`,
+                // Extract Amazon badges from tags
+                isPrime: product.tags?.includes("Prime") || false,
+                isBestSeller: product.tags?.includes("Best Seller") || false,
+                isAmazonChoice: product.tags?.includes("Amazon's Choice") || false,
+              },
+            };
+          }
+          
           return {
             ...rec,
             product,

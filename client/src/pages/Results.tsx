@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Heart, ArrowLeft, Sparkles, IndianRupee, MessageSquare, ExternalLink, ShoppingCart } from "lucide-react";
+import { Heart, ArrowLeft, Sparkles, IndianRupee, MessageSquare, ExternalLink, ShoppingCart, Star, Package } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
@@ -23,10 +23,19 @@ type Recommendation = {
     category: string;
     priceMin: number;
     priceMax: number;
-    interests: string[];
-    occasions: string[];
-    tags: string[] | null;
+    interests?: string[];
+    occasions?: string[];
+    tags?: string[] | null;
     imageUrl: string | null;
+    // Amazon-specific fields
+    amazonUrl?: string | null;
+    amazonPrice?: string | null;
+    amazonRating?: string | null;
+    amazonNumRatings?: number | null;
+    isPrime?: boolean;
+    isBestSeller?: boolean;
+    isAmazonChoice?: boolean;
+    // Old Flipkart fields (kept for backward compatibility)
     flipkartProductId?: string | null;
     flipkartUrl?: string | null;
   };
@@ -207,16 +216,74 @@ export default function Results() {
                 </CardHeader>
 
                 <CardContent className="flex-1 space-y-4">
+                  {/* Amazon Product Image */}
+                  {rec.product.imageUrl && (
+                    <div className="aspect-square rounded-lg overflow-hidden bg-muted">
+                      <img 
+                        src={rec.product.imageUrl} 
+                        alt={rec.product.name}
+                        className="w-full h-full object-contain"
+                        data-testid={`img-product-${rec.id}`}
+                      />
+                    </div>
+                  )}
+
                   <p className="text-sm text-muted-foreground line-clamp-3" data-testid={`text-product-description-${rec.id}`}>
                     {rec.product.description}
                   </p>
 
-                  <div className="flex items-center gap-2 text-lg font-semibold text-primary" data-testid={`text-price-${rec.id}`}>
-                    <IndianRupee className="h-5 w-5" />
-                    {rec.product.priceMin === rec.product.priceMax
-                      ? rec.product.priceMin.toLocaleString()
-                      : `${rec.product.priceMin.toLocaleString()} - ${rec.product.priceMax.toLocaleString()}`}
+                  {/* Amazon Rating */}
+                  {rec.product.amazonRating && (
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1">
+                        <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+                        <span className="text-sm font-semibold">{rec.product.amazonRating}</span>
+                      </div>
+                      {rec.product.amazonNumRatings && (
+                        <span className="text-xs text-muted-foreground">
+                          ({rec.product.amazonNumRatings.toLocaleString()} ratings)
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Price */}
+                  <div className="flex items-baseline gap-2">
+                    {rec.product.amazonPrice ? (
+                      <span className="text-2xl font-bold text-foreground" data-testid={`text-price-${rec.id}`}>
+                        {rec.product.amazonPrice}
+                      </span>
+                    ) : (
+                      <div className="flex items-center gap-2 text-lg font-semibold text-primary" data-testid={`text-price-${rec.id}`}>
+                        <IndianRupee className="h-5 w-5" />
+                        {rec.product.priceMin === rec.product.priceMax
+                          ? rec.product.priceMin.toLocaleString()
+                          : `${rec.product.priceMin.toLocaleString()} - ${rec.product.priceMax.toLocaleString()}`}
+                      </div>
+                    )}
                   </div>
+
+                  {/* Amazon Badges */}
+                  {(rec.product.isPrime || rec.product.isBestSeller || rec.product.isAmazonChoice) && (
+                    <div className="flex flex-wrap gap-2">
+                      {rec.product.isPrime && (
+                        <Badge variant="outline" className="text-xs">
+                          <Package className="h-3 w-3 mr-1" />
+                          Prime
+                        </Badge>
+                      )}
+                      {rec.product.isBestSeller && (
+                        <Badge variant="outline" className="text-xs bg-chart-2/10">
+                          Best Seller
+                        </Badge>
+                      )}
+                      {rec.product.isAmazonChoice && (
+                        <Badge variant="outline" className="text-xs bg-primary/10">
+                          Amazon's Choice
+                        </Badge>
+                      )}
+                    </div>
+                  )}
 
                   <div className="bg-primary/5 rounded-lg p-3 border border-primary/10">
                     <div className="flex items-start gap-2">
@@ -250,23 +317,23 @@ export default function Results() {
                 </CardContent>
 
                 <CardFooter className="flex flex-col gap-2">
-                  {rec.product.flipkartUrl && (
+                  {(rec.product.amazonUrl || rec.product.flipkartUrl) && (
                     <Button
                       variant="default"
                       className="w-full"
                       asChild
-                      data-testid={`button-buy-flipkart-${rec.id}`}
+                      data-testid={`button-buy-${rec.id}`}
                     >
-                      <a href={rec.product.flipkartUrl} target="_blank" rel="noopener noreferrer">
+                      <a href={(rec.product.amazonUrl || rec.product.flipkartUrl) ?? undefined} target="_blank" rel="noopener noreferrer">
                         <ShoppingCart className="mr-2 h-4 w-4" />
-                        Buy on Flipkart
+                        {rec.product.amazonUrl ? "Buy on Amazon" : "Buy on Flipkart"}
                         <ExternalLink className="ml-2 h-3 w-3" />
                       </a>
                     </Button>
                   )}
                   <div className="flex gap-2 w-full">
                     <Button
-                      variant={rec.product.flipkartUrl ? "outline" : "default"}
+                      variant={(rec.product.amazonUrl || rec.product.flipkartUrl) ? "outline" : "default"}
                       className="flex-1"
                       onClick={() => addToWishlistMutation.mutate(rec.id)}
                       disabled={addToWishlistMutation.isPending}
