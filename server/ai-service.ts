@@ -184,7 +184,7 @@ async function generateRuleBasedProductSuggestions(
 
   // Search Amazon for each query
   const recommendations: AIGeneratedRecommendation[] = [];
-  const uniqueQueries = [...new Set(searchQueries)].slice(0, 6);
+  const uniqueQueries = Array.from(new Set(searchQueries)).slice(0, 6);
 
   for (const query of uniqueQueries) {
     try {
