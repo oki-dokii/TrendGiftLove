@@ -28,7 +28,8 @@ export interface AIGeneratedRecommendation {
  * This replaces the curated dataset approach with unlimited real products
  */
 export async function generateAIProductSuggestions(
-  request: GiftFinderRequest
+  request: GiftFinderRequest,
+  excludeProductNames: string[] = []
 ): Promise<AIGeneratedRecommendation[]> {
   const systemPrompt = `You are an expert gift advisor with deep knowledge of personality psychology, relationships, and thoughtful gift-giving. Your task is to analyze the recipient's profile and suggest specific product ideas that would make perfect gifts.
 
@@ -48,6 +49,11 @@ Consider:
 
 Return suggestions as a JSON array ordered by relevance score (highest first).`;
 
+  const excludeSection = excludeProductNames.length > 0 
+    ? `\n\nIMPORTANT: These products have already been suggested. Generate DIFFERENT suggestions and avoid similar products:
+${excludeProductNames.map(name => `- ${name}`).join('\n')}`
+    : '';
+
   const userPrompt = `Recipient Profile:
 ${request.recipientName ? `Name: ${request.recipientName}` : ""}
 ${request.recipientAge ? `Age: ${request.recipientAge}` : ""}
@@ -55,9 +61,9 @@ Relationship: ${request.relationship}
 Interests: ${request.interests.join(", ")}
 ${request.personality ? `Personality/Style: ${request.personality}` : ""}
 Budget: ${request.budget}
-Occasion: ${request.occasion}
+Occasion: ${request.occasion}${excludeSection}
 
-Generate 4-6 specific product suggestions for gifts available on Amazon India. Return ONLY valid JSON in this exact format:
+Generate 4-6 specific product suggestions for gifts available on Amazon India. ${excludeProductNames.length > 0 ? 'Suggest NEW and DIFFERENT products than the ones listed above.' : ''} Return ONLY valid JSON in this exact format:
 {
   "suggestions": [
     {
@@ -142,7 +148,7 @@ Generate 4-6 specific product suggestions for gifts available on Amazon India. R
     console.log("Falling back to rule-based product suggestions");
     
     // Fallback to rule-based suggestions
-    return generateRuleBasedProductSuggestions(request);
+    return generateRuleBasedProductSuggestions(request, excludeProductNames);
   }
 }
 
@@ -150,7 +156,8 @@ Generate 4-6 specific product suggestions for gifts available on Amazon India. R
  * Rule-based fallback for product suggestions
  */
 async function generateRuleBasedProductSuggestions(
-  request: GiftFinderRequest
+  request: GiftFinderRequest,
+  excludeProductNames: string[] = []
 ): Promise<AIGeneratedRecommendation[]> {
   // Generate simple product ideas based on interests
   const searchQueries: string[] = [];
@@ -188,12 +195,20 @@ async function generateRuleBasedProductSuggestions(
 
   for (const query of uniqueQueries) {
     try {
-      // Search Amazon India for Indian pricing
-      const searchResult = await searchAmazonProducts(query, 1, 'IN');
+      // Search Amazon India for Indian pricing - get more results to filter from
+      const searchResult = await searchAmazonProducts(query, 5, 'IN');
       
-      if (searchResult.products.length > 0) {
+      // Filter out already shown products
+      const newProducts = searchResult.products.filter(
+        product => !excludeProductNames.some(excluded => 
+          product.title.toLowerCase().includes(excluded.toLowerCase()) ||
+          excluded.toLowerCase().includes(product.title.toLowerCase())
+        )
+      );
+      
+      if (newProducts.length > 0) {
         recommendations.push({
-          amazonProduct: searchResult.products[0],
+          amazonProduct: newProducts[0],
           aiReasoning: `Great gift for someone interested in ${request.interests.join(", ")}`,
           relevanceScore: 70,
         });

@@ -193,8 +193,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { sessionId } = req.params;
       const request = giftFinderRequestSchema.parse(req.body);
       
-      // Generate new Amazon product recommendations
-      const amazonRecommendations = await generateAIProductSuggestions(request);
+      // Get existing recommendations to avoid duplicates
+      const existingRecs = await storage.getRecommendationsBySession(sessionId);
+      const excludeProductNames: string[] = [];
+      
+      for (const rec of existingRecs) {
+        if (rec.productId) {
+          const product = await storage.getGiftById(rec.productId);
+          if (product?.name) {
+            excludeProductNames.push(product.name);
+          }
+        }
+      }
+      
+      console.log(`Loading more ideas for session ${sessionId}, excluding ${excludeProductNames.length} existing products:`, excludeProductNames);
+      
+      // Generate new Amazon product recommendations with exclusions
+      const amazonRecommendations = await generateAIProductSuggestions(request, excludeProductNames);
       
       if (amazonRecommendations.length === 0) {
         return res.status(404).json({ 
