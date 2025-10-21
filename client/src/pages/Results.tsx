@@ -4,12 +4,13 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Heart, ArrowLeft, Sparkles, IndianRupee, MessageSquare, ExternalLink, ShoppingCart, Star, Package } from "lucide-react";
+import { Heart, ArrowLeft, Sparkles, MessageSquare, ExternalLink, Star, Package } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { motion } from "framer-motion";
+import SwipeableCard from "@/components/SwipeableCard";
 
 type Recommendation = {
   id: string;
@@ -40,6 +41,12 @@ type Recommendation = {
   };
 };
 
+interface FormCriteria {
+  interests: string[];
+  budget: string;
+  occasion: string;
+}
+
 export default function Results() {
   const [, navigate] = useLocation();
   const [, params] = useRoute("/results/:sessionId");
@@ -47,6 +54,101 @@ export default function Results() {
   const { toast } = useToast();
   const [generatingMessageFor, setGeneratingMessageFor] = useState<string | null>(null);
   const { isAuthenticated } = useAuth();
+
+  // Load form criteria from localStorage
+  const formCriteria = useMemo<FormCriteria | null>(() => {
+    if (!sessionId) return null;
+    const storageKey = `giftai_request_${sessionId}`;
+    const storedRequest = localStorage.getItem(storageKey);
+    if (!storedRequest) return null;
+    const data = JSON.parse(storedRequest);
+    return {
+      interests: data.interests || [],
+      budget: data.budget || "",
+      occasion: data.occasion || "",
+    };
+  }, [sessionId]);
+
+  // Helper to calculate match details for a product
+  const calculateMatchDetails = (rec: Recommendation) => {
+    if (!formCriteria) {
+      return {
+        interestMatch: { percentage: rec.relevanceScore, description: "AI-powered match" },
+        budgetMatch: { matches: true, description: "Fits your budget range" },
+        occasionMatch: { matches: true, description: "Perfect for this occasion" },
+      };
+    }
+
+    // Interest Match
+    const productInterests = rec.product.interests || [];
+    const matchingInterests = formCriteria.interests.filter(interest =>
+      productInterests.some(pi => pi.toLowerCase().includes(interest.toLowerCase()))
+    );
+    const interestPercentage = rec.relevanceScore;
+    const interestDescription = matchingInterests.length > 0
+      ? `Matches interests: ${matchingInterests.join(", ")}`
+      : "AI suggests this matches your interests";
+
+    // Budget Match
+    const productPrice = rec.product.priceMin;
+    let budgetMatches = true;
+    let budgetDescription = "";
+
+    const priceDisplay = rec.product.amazonPrice || `₹${productPrice.toLocaleString()}`;
+    
+    if (formCriteria.budget.includes("Under ₹500")) {
+      budgetMatches = productPrice <= 500;
+      budgetDescription = budgetMatches 
+        ? `${priceDisplay} fits your budget (Under ₹500)`
+        : `${priceDisplay} exceeds your budget`;
+    } else if (formCriteria.budget.includes("₹500 - ₹2000")) {
+      budgetMatches = productPrice >= 500 && productPrice <= 2000;
+      budgetDescription = budgetMatches
+        ? `${priceDisplay} fits your budget (₹500 - ₹2,000)`
+        : `${priceDisplay} is outside your budget range`;
+    } else if (formCriteria.budget.includes("₹2000 - ₹5000")) {
+      budgetMatches = productPrice >= 2000 && productPrice <= 5000;
+      budgetDescription = budgetMatches
+        ? `${priceDisplay} fits your budget (₹2,000 - ₹5,000)`
+        : `${priceDisplay} is outside your budget range`;
+    } else if (formCriteria.budget.includes("₹5000 - ₹10000")) {
+      budgetMatches = productPrice >= 5000 && productPrice <= 10000;
+      budgetDescription = budgetMatches
+        ? `${priceDisplay} fits your budget (₹5,000 - ₹10,000)`
+        : `${priceDisplay} is outside your budget range`;
+    } else if (formCriteria.budget.includes("₹10000+")) {
+      budgetMatches = productPrice >= 10000;
+      budgetDescription = budgetMatches
+        ? `${priceDisplay} fits your premium budget`
+        : `${priceDisplay} is below your budget range`;
+    } else {
+      budgetDescription = `${priceDisplay} within reasonable range`;
+    }
+
+    // Occasion Match
+    const productOccasions = rec.product.occasions || [];
+    const occasionMatches = productOccasions.some(occ =>
+      occ.toLowerCase().includes(formCriteria.occasion.toLowerCase())
+    ) || formCriteria.occasion === "Just Because";
+    const occasionDescription = occasionMatches
+      ? `A thoughtful and memorable ${formCriteria.occasion.toLowerCase()} gift`
+      : `Great gift for any occasion including ${formCriteria.occasion}`;
+
+    return {
+      interestMatch: {
+        percentage: interestPercentage,
+        description: interestDescription,
+      },
+      budgetMatch: {
+        matches: budgetMatches,
+        description: budgetDescription,
+      },
+      occasionMatch: {
+        matches: occasionMatches,
+        description: occasionDescription,
+      },
+    };
+  };
 
   const { data: recommendations, isLoading } = useQuery<Recommendation[]>({
     queryKey: [`/api/recommendations/${sessionId}`],
@@ -199,7 +301,7 @@ export default function Results() {
         >
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-secondary/50 backdrop-blur-sm border border-primary/20 mb-6">
             <Sparkles className="w-4 h-4 text-primary" />
-            <span className="text-sm text-muted-foreground">AI-Curated Results</span>
+            <span className="text-sm text-muted-foreground">Swipe left/right for details</span>
           </div>
           <motion.h1 
             className="text-4xl md:text-5xl font-bold mb-4"
@@ -234,150 +336,150 @@ export default function Results() {
           </div>
         ) : recommendations && recommendations.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {recommendations.map((rec, index) => (
-              <motion.div
-                key={rec.id}
-                initial={{ opacity: 0, y: 30 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: index * 0.1 }}
-                drag
-                dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
-                dragElastic={0.1}
-                whileHover={{ 
-                  scale: 1.05,
-                  rotateZ: 2,
-                  transition: { type: "spring", stiffness: 300 }
-                }}
-                whileTap={{ scale: 0.95 }}
-              >
-                <Card 
-                  className="border-border bg-card/50 backdrop-blur-sm hover:bg-card/80 transition-all duration-300 hover:shadow-[0_8px_32px_rgba(168,85,247,0.2)] group h-full flex flex-col"
-                  data-testid={`card-recommendation-${rec.id}`}
+            {recommendations.map((rec, index) => {
+              const matchDetails = calculateMatchDetails(rec);
+              
+              return (
+                <motion.div
+                  key={rec.id}
+                  initial={{ opacity: 0, y: 30 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: index * 0.1 }}
                 >
-                  <CardHeader>
-                    <div className="flex items-start justify-between mb-2">
-                      <Badge variant="secondary" data-testid={`text-product-category-${rec.id}`}>
-                        {rec.product.category}
-                      </Badge>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => toggleWishlist(rec.id)}
-                        className="text-muted-foreground hover:text-primary transition-colors"
-                        data-testid={`button-save-${rec.id}`}
-                      >
-                        <Heart className="w-5 h-5" />
-                      </Button>
-                    </div>
-                    <CardTitle className="text-xl line-clamp-2" data-testid={`text-product-name-${rec.id}`}>
-                      {rec.product.name}
-                    </CardTitle>
-                    <CardDescription className="text-2xl font-bold text-primary" data-testid={`text-price-${rec.id}`}>
-                      {rec.product.amazonPrice || `₹${rec.product.priceMin.toLocaleString()}`}
-                    </CardDescription>
-                  </CardHeader>
-
-                  <CardContent className="flex-1 space-y-3">
-                    {rec.product.imageUrl && (
-                      <div className="aspect-square rounded-lg overflow-hidden bg-muted/30">
-                        <img 
-                          src={rec.product.imageUrl} 
-                          alt={rec.product.name}
-                          className="w-full h-full object-contain"
-                          data-testid={`img-product-${rec.id}`}
-                        />
-                      </div>
-                    )}
-
-                    {rec.product.amazonRating && (
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center gap-1">
-                          <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                          <span className="text-sm font-semibold">{rec.product.amazonRating}</span>
-                        </div>
-                        {rec.product.amazonNumRatings && (
-                          <span className="text-xs text-muted-foreground">
-                            ({rec.product.amazonNumRatings.toLocaleString()})
-                          </span>
-                        )}
-                      </div>
-                    )}
-
-                    {(rec.product.isPrime || rec.product.isBestSeller || rec.product.isAmazonChoice) && (
-                      <div className="flex flex-wrap gap-2">
-                        {rec.product.isPrime && (
-                          <Badge variant="outline" className="text-xs">
-                            <Package className="h-3 w-3 mr-1" />
-                            Prime
-                          </Badge>
-                        )}
-                        {rec.product.isBestSeller && (
-                          <Badge variant="outline" className="text-xs">
-                            Best Seller
-                          </Badge>
-                        )}
-                        {rec.product.isAmazonChoice && (
-                          <Badge variant="outline" className="text-xs">
-                            Amazon's Choice
-                          </Badge>
-                        )}
-                      </div>
-                    )}
-
-                    <p className="text-muted-foreground text-sm" data-testid={`text-ai-reasoning-${rec.id}`}>
-                      {rec.aiReasoning}
-                    </p>
-
-                    {rec.personalizedMessage && (
-                      <div className="bg-primary/5 rounded-lg p-3 border border-primary/10">
-                        <div className="flex items-start gap-2">
-                          <MessageSquare className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
-                          <p className="text-sm text-foreground italic" data-testid={`text-personalized-message-${rec.id}`}>
-                            "{rec.personalizedMessage}"
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-
-                  <CardFooter className="flex flex-col gap-2">
-                    {(rec.product.amazonUrl || rec.product.flipkartUrl) && (
-                      <Button
-                        variant="outline"
-                        className="w-full gap-2 group-hover:bg-primary group-hover:text-primary-foreground transition-colors"
-                        asChild
-                        data-testid={`button-buy-${rec.id}`}
-                      >
-                        <a href={(rec.product.amazonUrl || rec.product.flipkartUrl) ?? undefined} target="_blank" rel="noopener noreferrer">
-                          View Product
-                          <ExternalLink className="w-4 h-4" />
-                        </a>
-                      </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleGenerateMessage(rec.id)}
-                      disabled={generatingMessageFor === rec.id}
-                      className="w-full"
-                      data-testid={`button-generate-message-${rec.id}`}
+                  <SwipeableCard
+                    matchScore={rec.relevanceScore}
+                    matchDetails={matchDetails}
+                  >
+                    <Card 
+                      className="border-border bg-card/50 backdrop-blur-sm hover:bg-card/80 transition-all duration-300 hover:shadow-[0_8px_32px_rgba(168,85,247,0.2)] group h-full flex flex-col"
+                      data-testid={`card-recommendation-${rec.id}`}
                     >
-                      {generatingMessageFor === rec.id ? (
-                        <span className="flex items-center gap-2">
-                          <span className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                          Generating...
-                        </span>
-                      ) : (
-                        <>
-                          <MessageSquare className="h-4 w-4 mr-2" />
-                          Generate Message
-                        </>
-                      )}
-                    </Button>
-                  </CardFooter>
-                </Card>
-              </motion.div>
-            ))}
+                      <CardHeader>
+                        <div className="flex items-start justify-between mb-2">
+                          <Badge variant="secondary" data-testid={`text-product-category-${rec.id}`}>
+                            {rec.product.category}
+                          </Badge>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => toggleWishlist(rec.id)}
+                            className="text-muted-foreground hover:text-primary transition-colors"
+                            data-testid={`button-save-${rec.id}`}
+                          >
+                            <Heart className="w-5 h-5" />
+                          </Button>
+                        </div>
+                        <CardTitle className="text-xl line-clamp-2" data-testid={`text-product-name-${rec.id}`}>
+                          {rec.product.name}
+                        </CardTitle>
+                        <CardDescription className="text-2xl font-bold text-primary" data-testid={`text-price-${rec.id}`}>
+                          {rec.product.amazonPrice || `₹${rec.product.priceMin.toLocaleString()}`}
+                        </CardDescription>
+                      </CardHeader>
+
+                      <CardContent className="flex-1 space-y-3">
+                        {rec.product.imageUrl && (
+                          <div className="aspect-square rounded-lg overflow-hidden bg-muted/30">
+                            <img 
+                              src={rec.product.imageUrl} 
+                              alt={rec.product.name}
+                              className="w-full h-full object-contain"
+                              data-testid={`img-product-${rec.id}`}
+                            />
+                          </div>
+                        )}
+
+                        {rec.product.amazonRating && (
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1">
+                              <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+                              <span className="text-sm font-semibold">{rec.product.amazonRating}</span>
+                            </div>
+                            {rec.product.amazonNumRatings && (
+                              <span className="text-xs text-muted-foreground">
+                                ({rec.product.amazonNumRatings.toLocaleString()})
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        {(rec.product.isPrime || rec.product.isBestSeller || rec.product.isAmazonChoice) && (
+                          <div className="flex flex-wrap gap-2">
+                            {rec.product.isPrime && (
+                              <Badge variant="outline" className="text-xs">
+                                <Package className="h-3 w-3 mr-1" />
+                                Prime
+                              </Badge>
+                            )}
+                            {rec.product.isBestSeller && (
+                              <Badge variant="outline" className="text-xs">
+                                Best Seller
+                              </Badge>
+                            )}
+                            {rec.product.isAmazonChoice && (
+                              <Badge variant="outline" className="text-xs">
+                                Amazon's Choice
+                              </Badge>
+                            )}
+                          </div>
+                        )}
+
+                        <p className="text-muted-foreground text-sm" data-testid={`text-ai-reasoning-${rec.id}`}>
+                          {rec.aiReasoning}
+                        </p>
+
+                        {rec.personalizedMessage && (
+                          <div className="bg-primary/5 rounded-lg p-3 border border-primary/10">
+                            <div className="flex items-start gap-2">
+                              <MessageSquare className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                              <p className="text-sm text-foreground italic" data-testid={`text-personalized-message-${rec.id}`}>
+                                "{rec.personalizedMessage}"
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+
+                      <CardFooter className="flex flex-col gap-2">
+                        {(rec.product.amazonUrl || rec.product.flipkartUrl) && (
+                          <Button
+                            variant="outline"
+                            className="w-full gap-2 group-hover:bg-primary group-hover:text-primary-foreground transition-colors"
+                            asChild
+                            data-testid={`button-buy-${rec.id}`}
+                          >
+                            <a href={(rec.product.amazonUrl || rec.product.flipkartUrl) ?? undefined} target="_blank" rel="noopener noreferrer">
+                              View Product
+                              <ExternalLink className="w-4 h-4" />
+                            </a>
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleGenerateMessage(rec.id)}
+                          disabled={generatingMessageFor === rec.id}
+                          className="w-full"
+                          data-testid={`button-generate-message-${rec.id}`}
+                        >
+                          {generatingMessageFor === rec.id ? (
+                            <span className="flex items-center gap-2">
+                              <span className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                              Generating...
+                            </span>
+                          ) : (
+                            <>
+                              <MessageSquare className="h-4 w-4 mr-2" />
+                              Generate Message
+                            </>
+                          )}
+                        </Button>
+                      </CardFooter>
+                    </Card>
+                  </SwipeableCard>
+                </motion.div>
+              );
+            })}
           </div>
         ) : (
           <Card className="border-border bg-card/50 backdrop-blur-sm">
