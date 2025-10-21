@@ -1,17 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { Sparkles } from "lucide-react";
-import { useLocation } from "wouter";
+import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 
-export default function Hero() {
-  const [, setLocation] = useLocation();
-  
-  const scrollToGiftFinder = () => {
-    const giftFinderElement = document.getElementById('gift-finder');
-    if (giftFinderElement) {
-      giftFinderElement.scrollIntoView({ behavior: 'smooth' });
-    }
-  };
+const Hero = () => {
+  const navigate = useNavigate();
   
   return (
     <section className="relative min-h-[80vh] flex items-center justify-center px-6 py-20 overflow-hidden">
@@ -46,7 +39,6 @@ export default function Hero() {
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
-          data-testid="badge-ai-powered"
         >
           <Sparkles className="w-4 h-4 text-primary" />
           <span className="text-sm text-muted-foreground">Powered by AI</span>
@@ -58,7 +50,6 @@ export default function Hero() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.2 }}
           style={{ perspective: 1000 }}
-          data-testid="text-hero-title"
         >
           <motion.span
             style={{ display: "inline-block" }}
@@ -80,7 +71,6 @@ export default function Hero() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.4 }}
-          data-testid="text-hero-description"
         >
           Discover thoughtful birthday gifts curated by AI — personal, relevant, and heartfelt.
         </motion.p>
@@ -94,9 +84,8 @@ export default function Hero() {
           <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
             <Button
               size="lg"
-              onClick={scrollToGiftFinder}
+              onClick={() => navigate("/find-gifts")}
               className="h-14 px-8 text-lg font-semibold bg-gradient-to-r from-primary to-accent hover:opacity-90 transition-all duration-300 shadow-[0_0_40px_rgba(168,85,247,0.4)] hover:shadow-[0_0_60px_rgba(168,85,247,0.6)]"
-              data-testid="button-start-finding"
             >
               Start Finding Gifts
             </Button>
@@ -105,15 +94,16 @@ export default function Hero() {
             <Button
               size="lg"
               variant="outline"
-              onClick={() => setLocation("/wishlist")}
+              onClick={() => navigate("/auth")}
               className="h-14 px-8 text-lg font-semibold border-2 border-primary/50 hover:bg-primary/10 hover:border-primary transition-all duration-300"
-              data-testid="button-view-wishlist"
             >
-              View Wishlist
+              Sign In
             </Button>
           </motion.div>
         </motion.div>
       </div>
     </section>
   );
-}
+};
+
+export default Hero;
