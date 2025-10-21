@@ -9,6 +9,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
+import { motion } from "framer-motion";
 
 type Recommendation = {
   id: string;
@@ -27,7 +28,6 @@ type Recommendation = {
     occasions?: string[];
     tags?: string[] | null;
     imageUrl: string | null;
-    // Amazon-specific fields
     amazonUrl?: string | null;
     amazonPrice?: string | null;
     amazonRating?: string | null;
@@ -35,7 +35,6 @@ type Recommendation = {
     isPrime?: boolean;
     isBestSeller?: boolean;
     isAmazonChoice?: boolean;
-    // Old Flipkart fields (kept for backward compatibility)
     flipkartProductId?: string | null;
     flipkartUrl?: string | null;
   };
@@ -49,33 +48,26 @@ export default function Results() {
   const [generatingMessageFor, setGeneratingMessageFor] = useState<string | null>(null);
   const { isAuthenticated } = useAuth();
 
-  // Fetch recommendations
   const { data: recommendations, isLoading } = useQuery<Recommendation[]>({
     queryKey: [`/api/recommendations/${sessionId}`],
     enabled: !!sessionId,
   });
 
-  // Load more recommendations mutation
   const loadMoreMutation = useMutation({
     mutationFn: async () => {
-      // Retrieve original request data from localStorage
       const storageKey = `giftai_request_${sessionId}`;
       const storedRequest = localStorage.getItem(storageKey);
       
       if (!storedRequest) {
         console.error("localStorage key not found:", storageKey);
-        console.log("Available keys:", Object.keys(localStorage));
         throw new Error("Please refresh the page and try again");
       }
       
       const requestData = JSON.parse(storedRequest);
-      console.log("Loading more recommendations with:", requestData);
-      
       const response = await apiRequest("POST", `/api/recommendations/${sessionId}/more`, requestData);
       return await response.json();
     },
-    onSuccess: (data) => {
-      console.log("Load more success:", data);
+    onSuccess: () => {
       toast({
         title: "More Ideas Added",
         description: "We've found more gift recommendations for you!",
@@ -83,7 +75,6 @@ export default function Results() {
       queryClient.invalidateQueries({ queryKey: [`/api/recommendations/${sessionId}`] });
     },
     onError: (error: any) => {
-      console.error("Load more error:", error);
       toast({
         title: "Couldn't Load More",
         description: error.message || "We couldn't find any more suitable gifts.",
@@ -92,13 +83,11 @@ export default function Results() {
     },
   });
 
-  // Add to wishlist/bucket mutation (supports both authenticated and anonymous users)
   const addToWishlistMutation = useMutation({
     mutationFn: async (recommendationId: string) => {
       const payload = isAuthenticated
-        ? { recommendationId } // Authenticated users don't need sessionId
-        : { sessionId, recommendationId }; // Anonymous users use sessionId
-      
+        ? { recommendationId }
+        : { sessionId, recommendationId };
       return await apiRequest("POST", "/api/wishlist", payload);
     },
     onSuccess: () => {
@@ -108,8 +97,6 @@ export default function Results() {
           ? "Gift saved to your bucket list and will persist across sessions!" 
           : "Gift saved to your wishlist successfully!",
       });
-      
-      // Invalidate the appropriate query
       if (isAuthenticated) {
         queryClient.invalidateQueries({ queryKey: ["/api/wishlist/bucket"] });
       } else {
@@ -125,18 +112,16 @@ export default function Results() {
     },
   });
 
-  // Generate personalized message mutation
   const generateMessageMutation = useMutation({
     mutationFn: async (recommendationId: string) => {
       return await apiRequest("POST", "/api/message", { recommendationId });
     },
-    onSuccess: (data, recommendationId) => {
+    onSuccess: () => {
       setGeneratingMessageFor(null);
       toast({
         title: "Message Generated",
         description: "Personalized message created!",
       });
-      // Update the recommendation in the cache
       queryClient.invalidateQueries({ queryKey: [`/api/recommendations/${sessionId}`] });
     },
     onError: () => {
@@ -154,9 +139,13 @@ export default function Results() {
     generateMessageMutation.mutate(recommendationId);
   };
 
+  const toggleWishlist = (recommendationId: string) => {
+    addToWishlistMutation.mutate(recommendationId);
+  };
+
   if (!sessionId) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <Card>
           <CardHeader>
             <CardTitle>Session Not Found</CardTitle>
@@ -174,194 +163,203 @@ export default function Results() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background to-muted/20">
+    <div className="min-h-screen bg-background">
       {/* Header */}
-      <div className="border-b bg-card">
-        <div className="container mx-auto px-4 py-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-foreground mb-2" data-testid="text-results-title">
-                Your Perfect Gift Recommendations
-              </h1>
-              <p className="text-muted-foreground" data-testid="text-results-description">
-                AI-powered suggestions tailored just for your special someone
-              </p>
-            </div>
-            <Button variant="outline" onClick={() => navigate("/")} data-testid="button-back-home">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              New Search
+      <header className="border-b border-border bg-card/30 backdrop-blur-sm sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+          <Button
+            variant="ghost"
+            onClick={() => navigate("/")}
+            className="gap-2"
+            data-testid="button-back-home"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back
+          </Button>
+          <div className="flex items-center gap-4">
+            <Button
+              variant="outline"
+              onClick={() => navigate("/wishlist")}
+              className="gap-2"
+            >
+              <Heart className="w-4 h-4" />
+              {isAuthenticated ? "Bucket List" : "Wishlist"}
             </Button>
           </div>
         </div>
-      </div>
+      </header>
 
-      {/* Results */}
-      <div className="container mx-auto px-4 py-8">
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-6 py-12">
+        <motion.div 
+          className="text-center mb-12"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+        >
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-secondary/50 backdrop-blur-sm border border-primary/20 mb-6">
+            <Sparkles className="w-4 h-4 text-primary" />
+            <span className="text-sm text-muted-foreground">AI-Curated Results</span>
+          </div>
+          <motion.h1 
+            className="text-4xl md:text-5xl font-bold mb-4"
+            whileHover={{ scale: 1.02 }}
+            transition={{ type: "spring", stiffness: 300 }}
+            data-testid="text-results-title"
+          >
+            Your Perfect{" "}
+            <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+              Gift Ideas
+            </span>
+          </motion.h1>
+          <p className="text-lg text-muted-foreground" data-testid="text-results-description">
+            AI-powered recommendations based on interests and budget
+          </p>
+        </motion.div>
+
         {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[1, 2, 3, 4, 5, 6].map((i) => (
-              <Card key={i} data-testid={`skeleton-card-${i}`}>
+              <Card key={i} data-testid={`skeleton-card-${i}`} className="border-border bg-card/50 backdrop-blur-sm">
                 <CardHeader>
                   <Skeleton className="h-6 w-3/4 mb-2" />
                   <Skeleton className="h-4 w-1/2" />
                 </CardHeader>
                 <CardContent>
-                  <Skeleton className="h-24 w-full" />
+                  <Skeleton className="h-48 w-full mb-4" />
+                  <Skeleton className="h-20 w-full" />
                 </CardContent>
               </Card>
             ))}
           </div>
         ) : recommendations && recommendations.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {recommendations.map((rec) => (
-              <Card key={rec.id} className="flex flex-col" data-testid={`card-recommendation-${rec.id}`}>
-                <CardHeader>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1">
-                      <CardTitle className="line-clamp-2" data-testid={`text-product-name-${rec.id}`}>
-                        {rec.product.name}
-                      </CardTitle>
-                      <CardDescription className="mt-1" data-testid={`text-product-category-${rec.id}`}>
+            {recommendations.map((rec, index) => (
+              <motion.div
+                key={rec.id}
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: index * 0.1 }}
+                drag
+                dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
+                dragElastic={0.1}
+                whileHover={{ 
+                  scale: 1.05,
+                  rotateZ: 2,
+                  transition: { type: "spring", stiffness: 300 }
+                }}
+                whileTap={{ scale: 0.95 }}
+              >
+                <Card 
+                  className="border-border bg-card/50 backdrop-blur-sm hover:bg-card/80 transition-all duration-300 hover:shadow-[0_8px_32px_rgba(168,85,247,0.2)] group h-full flex flex-col"
+                  data-testid={`card-recommendation-${rec.id}`}
+                >
+                  <CardHeader>
+                    <div className="flex items-start justify-between mb-2">
+                      <Badge variant="secondary" data-testid={`text-product-category-${rec.id}`}>
                         {rec.product.category}
-                      </CardDescription>
+                      </Badge>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => toggleWishlist(rec.id)}
+                        className="text-muted-foreground hover:text-primary transition-colors"
+                        data-testid={`button-save-${rec.id}`}
+                      >
+                        <Heart className="w-5 h-5" />
+                      </Button>
                     </div>
-                    <Badge variant="secondary" data-testid={`badge-score-${rec.id}`}>
-                      {rec.relevanceScore}% Match
-                    </Badge>
-                  </div>
-                </CardHeader>
+                    <CardTitle className="text-xl line-clamp-2" data-testid={`text-product-name-${rec.id}`}>
+                      {rec.product.name}
+                    </CardTitle>
+                    <CardDescription className="text-2xl font-bold text-primary" data-testid={`text-price-${rec.id}`}>
+                      {rec.product.amazonPrice || `₹${rec.product.priceMin.toLocaleString()}`}
+                    </CardDescription>
+                  </CardHeader>
 
-                <CardContent className="flex-1 space-y-4">
-                  {/* Amazon Product Image */}
-                  {rec.product.imageUrl && (
-                    <div className="aspect-square rounded-lg overflow-hidden bg-muted">
-                      <img 
-                        src={rec.product.imageUrl} 
-                        alt={rec.product.name}
-                        className="w-full h-full object-contain"
-                        data-testid={`img-product-${rec.id}`}
-                      />
-                    </div>
-                  )}
-
-                  <p className="text-sm text-muted-foreground line-clamp-3" data-testid={`text-product-description-${rec.id}`}>
-                    {rec.product.description}
-                  </p>
-
-                  {/* Amazon Rating */}
-                  {rec.product.amazonRating && (
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center gap-1">
-                        <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                        <span className="text-sm font-semibold">{rec.product.amazonRating}</span>
-                      </div>
-                      {rec.product.amazonNumRatings && (
-                        <span className="text-xs text-muted-foreground">
-                          ({rec.product.amazonNumRatings.toLocaleString()} ratings)
-                        </span>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Price */}
-                  <div className="flex items-baseline gap-2">
-                    {rec.product.amazonPrice ? (
-                      <span className="text-2xl font-bold text-foreground" data-testid={`text-price-${rec.id}`}>
-                        {rec.product.amazonPrice}
-                      </span>
-                    ) : (
-                      <div className="flex items-center gap-2 text-lg font-semibold text-primary" data-testid={`text-price-${rec.id}`}>
-                        <IndianRupee className="h-5 w-5" />
-                        {rec.product.priceMin === rec.product.priceMax
-                          ? rec.product.priceMin.toLocaleString()
-                          : `${rec.product.priceMin.toLocaleString()} - ${rec.product.priceMax.toLocaleString()}`}
+                  <CardContent className="flex-1 space-y-3">
+                    {rec.product.imageUrl && (
+                      <div className="aspect-square rounded-lg overflow-hidden bg-muted/30">
+                        <img 
+                          src={rec.product.imageUrl} 
+                          alt={rec.product.name}
+                          className="w-full h-full object-contain"
+                          data-testid={`img-product-${rec.id}`}
+                        />
                       </div>
                     )}
-                  </div>
 
-                  {/* Amazon Badges */}
-                  {(rec.product.isPrime || rec.product.isBestSeller || rec.product.isAmazonChoice) && (
-                    <div className="flex flex-wrap gap-2">
-                      {rec.product.isPrime && (
-                        <Badge variant="outline" className="text-xs">
-                          <Package className="h-3 w-3 mr-1" />
-                          Prime
-                        </Badge>
-                      )}
-                      {rec.product.isBestSeller && (
-                        <Badge variant="outline" className="text-xs bg-chart-2/10">
-                          Best Seller
-                        </Badge>
-                      )}
-                      {rec.product.isAmazonChoice && (
-                        <Badge variant="outline" className="text-xs bg-primary/10">
-                          Amazon's Choice
-                        </Badge>
-                      )}
-                    </div>
-                  )}
-
-                  <div className="bg-primary/5 rounded-lg p-3 border border-primary/10">
-                    <div className="flex items-start gap-2">
-                      <Sparkles className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
-                      <p className="text-sm text-foreground" data-testid={`text-ai-reasoning-${rec.id}`}>
-                        {rec.aiReasoning}
-                      </p>
-                    </div>
-                  </div>
-
-                  {rec.personalizedMessage && (
-                    <div className="bg-chart-2/5 rounded-lg p-3 border border-chart-2/20">
-                      <div className="flex items-start gap-2">
-                        <MessageSquare className="h-4 w-4 text-chart-2 mt-0.5 flex-shrink-0" />
-                        <p className="text-sm text-foreground italic" data-testid={`text-personalized-message-${rec.id}`}>
-                          "{rec.personalizedMessage}"
-                        </p>
+                    {rec.product.amazonRating && (
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1">
+                          <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+                          <span className="text-sm font-semibold">{rec.product.amazonRating}</span>
+                        </div>
+                        {rec.product.amazonNumRatings && (
+                          <span className="text-xs text-muted-foreground">
+                            ({rec.product.amazonNumRatings.toLocaleString()})
+                          </span>
+                        )}
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {rec.product.tags && rec.product.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {rec.product.tags.slice(0, 3).map((tag, idx) => (
-                        <Badge key={idx} variant="outline" className="text-xs" data-testid={`badge-tag-${rec.id}-${idx}`}>
-                          {tag}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
+                    {(rec.product.isPrime || rec.product.isBestSeller || rec.product.isAmazonChoice) && (
+                      <div className="flex flex-wrap gap-2">
+                        {rec.product.isPrime && (
+                          <Badge variant="outline" className="text-xs">
+                            <Package className="h-3 w-3 mr-1" />
+                            Prime
+                          </Badge>
+                        )}
+                        {rec.product.isBestSeller && (
+                          <Badge variant="outline" className="text-xs">
+                            Best Seller
+                          </Badge>
+                        )}
+                        {rec.product.isAmazonChoice && (
+                          <Badge variant="outline" className="text-xs">
+                            Amazon's Choice
+                          </Badge>
+                        )}
+                      </div>
+                    )}
 
-                <CardFooter className="flex flex-col gap-2">
-                  {(rec.product.amazonUrl || rec.product.flipkartUrl) && (
+                    <p className="text-muted-foreground text-sm" data-testid={`text-ai-reasoning-${rec.id}`}>
+                      {rec.aiReasoning}
+                    </p>
+
+                    {rec.personalizedMessage && (
+                      <div className="bg-primary/5 rounded-lg p-3 border border-primary/10">
+                        <div className="flex items-start gap-2">
+                          <MessageSquare className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                          <p className="text-sm text-foreground italic" data-testid={`text-personalized-message-${rec.id}`}>
+                            "{rec.personalizedMessage}"
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+
+                  <CardFooter className="flex flex-col gap-2">
+                    {(rec.product.amazonUrl || rec.product.flipkartUrl) && (
+                      <Button
+                        variant="outline"
+                        className="w-full gap-2 group-hover:bg-primary group-hover:text-primary-foreground transition-colors"
+                        asChild
+                        data-testid={`button-buy-${rec.id}`}
+                      >
+                        <a href={(rec.product.amazonUrl || rec.product.flipkartUrl) ?? undefined} target="_blank" rel="noopener noreferrer">
+                          View Product
+                          <ExternalLink className="w-4 h-4" />
+                        </a>
+                      </Button>
+                    )}
                     <Button
-                      variant="default"
-                      className="w-full"
-                      asChild
-                      data-testid={`button-buy-${rec.id}`}
-                    >
-                      <a href={(rec.product.amazonUrl || rec.product.flipkartUrl) ?? undefined} target="_blank" rel="noopener noreferrer">
-                        <ShoppingCart className="mr-2 h-4 w-4" />
-                        {rec.product.amazonUrl ? "Buy on Amazon" : "Buy on Flipkart"}
-                        <ExternalLink className="ml-2 h-3 w-3" />
-                      </a>
-                    </Button>
-                  )}
-                  <div className="flex gap-2 w-full">
-                    <Button
-                      variant={(rec.product.amazonUrl || rec.product.flipkartUrl) ? "outline" : "default"}
-                      className="flex-1"
-                      onClick={() => addToWishlistMutation.mutate(rec.id)}
-                      disabled={addToWishlistMutation.isPending}
-                      data-testid={`button-save-${rec.id}`}
-                    >
-                      <Heart className="mr-2 h-4 w-4" />
-                      {isAuthenticated ? "Save to Bucket List" : "Save to Wishlist"}
-                    </Button>
-                    <Button
-                      variant="outline"
+                      variant="ghost"
+                      size="sm"
                       onClick={() => handleGenerateMessage(rec.id)}
                       disabled={generatingMessageFor === rec.id}
+                      className="w-full"
                       data-testid={`button-generate-message-${rec.id}`}
                     >
                       {generatingMessageFor === rec.id ? (
@@ -371,21 +369,22 @@ export default function Results() {
                         </span>
                       ) : (
                         <>
-                          <MessageSquare className="h-4 w-4" />
+                          <MessageSquare className="h-4 w-4 mr-2" />
+                          Generate Message
                         </>
                       )}
                     </Button>
-                  </div>
-                </CardFooter>
-              </Card>
+                  </CardFooter>
+                </Card>
+              </motion.div>
             ))}
           </div>
         ) : (
-          <Card>
+          <Card className="border-border bg-card/50 backdrop-blur-sm">
             <CardHeader>
               <CardTitle>No Recommendations Found</CardTitle>
               <CardDescription>
-                We couldn't find any suitable gifts for this criteria. Try adjusting your search.
+                We couldn't find any suitable gifts. Try adjusting your search.
               </CardDescription>
             </CardHeader>
             <CardFooter>
@@ -398,29 +397,30 @@ export default function Results() {
         )}
 
         {recommendations && recommendations.length > 0 && (
-          <div className="flex justify-center mt-8">
+          <div className="mt-12 text-center">
             <Button
               variant="outline"
               size="lg"
               onClick={() => loadMoreMutation.mutate()}
               disabled={loadMoreMutation.isPending}
+              className="gap-2 h-12 px-6"
               data-testid="button-load-more"
             >
               {loadMoreMutation.isPending ? (
                 <>
-                  <span className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2" />
+                  <span className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                   Finding More Ideas...
                 </>
               ) : (
                 <>
-                  <Sparkles className="mr-2 h-5 w-5" />
+                  <Sparkles className="h-5 w-5" />
                   Load More Ideas
                 </>
               )}
             </Button>
           </div>
         )}
-      </div>
+      </main>
     </div>
   );
 }
