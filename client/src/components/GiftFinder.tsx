@@ -36,7 +36,11 @@ const occasions = [
   "Birthday", "Anniversary", "Graduation", "Holiday", "Just Because"
 ];
 
-export default function GiftFinder() {
+interface GiftFinderProps {
+  onSuccess?: () => void;
+}
+
+export default function GiftFinder({ onSuccess }: GiftFinderProps = {}) {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   
@@ -97,6 +101,7 @@ export default function GiftFinder() {
       if (data.sessionId) {
         // Store request data in localStorage for "Load More" functionality
         localStorage.setItem(`giftai_request_${data.sessionId}`, JSON.stringify(requestData));
+        onSuccess?.();
         navigate(`/results/${data.sessionId}`);
       } else {
         throw new Error("No session ID returned");
