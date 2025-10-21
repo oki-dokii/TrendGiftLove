@@ -58,7 +58,13 @@ export default function Results() {
   // Load more recommendations mutation
   const loadMoreMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest("POST", `/api/recommendations/${sessionId}/more`, {});
+      // Retrieve original request data from localStorage
+      const storedRequest = localStorage.getItem(`giftai_request_${sessionId}`);
+      if (!storedRequest) {
+        throw new Error("Original request data not found");
+      }
+      const requestData = JSON.parse(storedRequest);
+      return await apiRequest("POST", `/api/recommendations/${sessionId}/more`, requestData);
     },
     onSuccess: () => {
       toast({

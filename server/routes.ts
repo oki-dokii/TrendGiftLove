@@ -187,6 +187,101 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // POST /api/recommendations/:sessionId/more - Generate more recommendations for existing session
+  app.post("/api/recommendations/:sessionId/more", async (req, res) => {
+    try {
+      const { sessionId } = req.params;
+      const request = giftFinderRequestSchema.parse(req.body);
+      
+      // Generate new Amazon product recommendations
+      const amazonRecommendations = await generateAIProductSuggestions(request);
+      
+      if (amazonRecommendations.length === 0) {
+        return res.status(404).json({ 
+          error: "No additional gifts found on Amazon for this criteria" 
+        });
+      }
+      
+      // Store new recommendations with the same sessionId
+      const savedRecommendations = [];
+      for (const rec of amazonRecommendations) {
+        try {
+          // Create a minimal product record for this Amazon product
+          const amazonProduct = await storage.createGiftProduct({
+            name: rec.amazonProduct.title,
+            description: rec.aiReasoning,
+            category: "Amazon Product",
+            priceMin: parseFloat(rec.amazonProduct.price.replace(/[^0-9.]/g, '')) || 0,
+            priceMax: parseFloat(rec.amazonProduct.price.replace(/[^0-9.]/g, '')) || 0,
+            interests: request.interests,
+            occasions: [request.occasion],
+            relationship: [request.relationship],
+            tags: [
+              rec.amazonProduct.isPrime ? "Prime" : "",
+              rec.amazonProduct.isBestSeller ? "Best Seller" : "",
+              rec.amazonProduct.isAmazonChoice ? "Amazon's Choice" : "",
+            ].filter(Boolean),
+            imageUrl: rec.amazonProduct.imageUrl,
+            flipkartUrl: null,
+          });
+          
+          // Update with Amazon URL
+          const updatedProduct = await storage.updateGiftProduct(amazonProduct.id, {
+            flipkartUrl: rec.amazonProduct.url,
+          });
+          
+          // Create recommendation pointing to this product with SAME sessionId
+          const recommendation = await storage.createRecommendation({
+            sessionId, // Use existing sessionId
+            recipientName: request.recipientName || null,
+            recipientAge: request.recipientAge || null,
+            relationship: request.relationship,
+            interests: request.interests,
+            personality: request.personality || null,
+            budget: request.budget,
+            occasion: request.occasion,
+            productId: amazonProduct.id,
+            aiReasoning: rec.aiReasoning,
+            personalizedMessage: null,
+            relevanceScore: rec.relevanceScore,
+          });
+          
+          // Format for frontend
+          savedRecommendations.push({
+            ...recommendation,
+            product: {
+              ...(updatedProduct || amazonProduct),
+              amazonUrl: rec.amazonProduct.url,
+              amazonPrice: rec.amazonProduct.price,
+              amazonRating: rec.amazonProduct.rating,
+              amazonNumRatings: rec.amazonProduct.numRatings,
+              isPrime: rec.amazonProduct.isPrime,
+              isBestSeller: rec.amazonProduct.isBestSeller,
+              isAmazonChoice: rec.amazonProduct.isAmazonChoice,
+            },
+          });
+        } catch (error) {
+          console.error("Error saving additional Amazon recommendation:", error);
+        }
+      }
+      
+      res.json({
+        sessionId,
+        recommendations: savedRecommendations,
+      });
+      
+    } catch (error) {
+      console.error("Error generating more recommendations:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          error: "Invalid request data", 
+          details: error.errors 
+        });
+      }
+      res.status(500).json({ error: "Failed to generate more recommendations" });
+    }
+  });
+  
   // GET /api/gifts - Get all gifts with optional filtering
   app.get("/api/gifts", async (req, res) => {
     try {

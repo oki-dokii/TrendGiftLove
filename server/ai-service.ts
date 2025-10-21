@@ -32,7 +32,7 @@ export async function generateAIProductSuggestions(
 ): Promise<AIGeneratedRecommendation[]> {
   const systemPrompt = `You are an expert gift advisor with deep knowledge of personality psychology, relationships, and thoughtful gift-giving. Your task is to analyze the recipient's profile and suggest specific product ideas that would make perfect gifts.
 
-Based on the recipient's profile, generate 6-8 specific product suggestions that can be purchased on Amazon. For each suggestion:
+Based on the recipient's profile, generate 4-6 specific product suggestions that can be purchased on Amazon India. For each suggestion:
 - Provide a specific search query (2-5 words) that will find the product on Amazon
 - Write a compelling 2-3 sentence explanation of why this gift is perfect for them
 - Give a relevance score from 1-100
@@ -57,7 +57,7 @@ ${request.personality ? `Personality/Style: ${request.personality}` : ""}
 Budget: ${request.budget}
 Occasion: ${request.occasion}
 
-Generate 6-8 specific product suggestions for gifts available on Amazon. Return ONLY valid JSON in this exact format:
+Generate 4-6 specific product suggestions for gifts available on Amazon India. Return ONLY valid JSON in this exact format:
 {
   "suggestions": [
     {

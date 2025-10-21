@@ -79,8 +79,7 @@ export default function GiftFinder() {
     console.log('Gift finder form submitted:', formData);
     
     try {
-      // This now uses Amazon products with AI-generated suggestions
-      const response = await apiRequest("POST", "/api/recommendations", {
+      const requestData = {
         recipientName: formData.name || undefined,
         recipientAge: formData.age ? parseInt(formData.age) : undefined,
         relationship: formData.relationship,
@@ -88,11 +87,16 @@ export default function GiftFinder() {
         personality: formData.personality || undefined,
         budget: formData.budget,
         occasion: formData.occasion,
-      });
+      };
+      
+      // This now uses Amazon products with AI-generated suggestions
+      const response = await apiRequest("POST", "/api/recommendations", requestData);
       
       const data = await response.json();
       
       if (data.sessionId) {
+        // Store request data in localStorage for "Load More" functionality
+        localStorage.setItem(`giftai_request_${data.sessionId}`, JSON.stringify(requestData));
         navigate(`/results/${data.sessionId}`);
       } else {
         throw new Error("No session ID returned");
