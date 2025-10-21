@@ -155,6 +155,18 @@ export default function Results() {
     enabled: !!sessionId,
   });
 
+  // Fetch wishlist items to track which products are saved
+  const { data: wishlistItems } = useQuery<any[]>({
+    queryKey: isAuthenticated ? ["/api/wishlist/bucket"] : ["/api/wishlist", sessionId],
+    enabled: !!sessionId,
+  });
+
+  // Create a Set of wishlist recommendation IDs for fast lookup
+  const wishlistRecommendationIds = useMemo(() => {
+    if (!wishlistItems) return new Set<string>();
+    return new Set(wishlistItems.map((item: any) => item.recommendationId));
+  }, [wishlistItems]);
+
   const loadMoreMutation = useMutation({
     mutationFn: async () => {
       const storageKey = `giftai_request_${sessionId}`;
@@ -192,13 +204,14 @@ export default function Results() {
         : { sessionId, recommendationId };
       return await apiRequest("POST", "/api/wishlist", payload);
     },
-    onSuccess: () => {
+    onSuccess: (_, recommendationId) => {
       toast({
         title: isAuthenticated ? "Added to Bucket List" : "Added to Wishlist",
         description: isAuthenticated 
           ? "Gift saved to your bucket list and will persist across sessions!" 
           : "Gift saved to your wishlist successfully!",
       });
+      // Invalidate both queries to update wishlist state
       if (isAuthenticated) {
         queryClient.invalidateQueries({ queryKey: ["/api/wishlist/bucket"] });
       } else {
@@ -338,6 +351,7 @@ export default function Results() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {recommendations.map((rec, index) => {
               const matchDetails = calculateMatchDetails(rec);
+              const isInWishlist = wishlistRecommendationIds.has(rec.id);
               
               return (
                 <motion.div
@@ -363,10 +377,18 @@ export default function Results() {
                             variant="ghost"
                             size="icon"
                             onClick={() => toggleWishlist(rec.id)}
-                            className="text-muted-foreground hover:text-primary transition-colors"
+                            className={`transition-all duration-300 ${
+                              isInWishlist 
+                                ? "text-red-500 hover:text-red-600" 
+                                : "text-muted-foreground hover:text-primary"
+                            }`}
                             data-testid={`button-save-${rec.id}`}
                           >
-                            <Heart className="w-5 h-5" />
+                            <Heart 
+                              className={`w-5 h-5 transition-all duration-300 ${
+                                isInWishlist ? "fill-red-500" : ""
+                              }`} 
+                            />
                           </Button>
                         </div>
                         <CardTitle className="text-xl line-clamp-2" data-testid={`text-product-name-${rec.id}`}>
