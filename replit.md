@@ -51,10 +51,11 @@ Preferred communication style: Simple, everyday language.
 - **Seeding Strategy**: Database seeding on startup to populate curated gift products
 
 **AI Integration Design:**
-- OpenAI GPT integration for intelligent gift matching and personalized message generation
-- Two-phase recommendation process: pre-filtering by budget/criteria, then AI relevance scoring
-- Custom prompts designed for personality-based gift recommendations
-- Relevance scoring algorithm (1-100) to rank gift suggestions
+- Google Gemini API integration for intelligent gift suggestion generation and personalized message generation
+- **AI-First Product Discovery**: AI generates 5-8 product ideas based on recipient profile, then searches Amazon for real products
+- **Unlimited Product Variety**: No longer limited to curated database - AI dynamically suggests products for any recipient
+- Custom prompts designed for personality-based gift recommendations with reasoning
+- Fallback to rule-based product suggestions when AI unavailable
 
 ### Data Models
 
@@ -102,15 +103,14 @@ Preferred communication style: Simple, everyday language.
 - **ESBuild**: Backend bundling for production builds
 
 **E-Commerce Integration:**
-- **RapidAPI - Real-Time Flipkart API**: Provides access to live Flipkart product catalog
+- **RapidAPI - Real-Time Amazon Data API**: Provides access to live Amazon product catalog
 - API key required via environment variable `RAPIDAPI_KEY`
-- Features: Product search, pricing, reviews, product URLs for direct purchasing
-- Enriches curated gift recommendations with actual buyable products
+- Features: Product search, pricing, star ratings, Prime badges, reviews, product URLs for direct purchasing
+- Powers unlimited AI-generated product recommendations with real Amazon products
 
 **Future Integration Points:**
-- Amazon Product Advertising API for Amazon product links
 - Email notification service for reminders (planned)
-- Product image hosting/CDN service
+- Additional marketplace integrations (Walmart, Target, etc.)
 
 ### Authentication & Session Management
 
@@ -129,33 +129,45 @@ Preferred communication style: Simple, everyday language.
 ### Content Strategy
 
 **Gift Product Database:**
-- Curated seed data with 200+ products across categories
-- Manual curation ensures quality over quantity
-- Products tagged by: interests, occasions, age groups, personality types, relationships
-- Price ranges from ₹0 (DIY ideas) to ₹10,000+
-- Categories include: Technology, Books, Art, Sports, Fashion, Home, etc.
-- **Flipkart Integration**: Products can be enriched with real Flipkart product links
-  - Schema includes `flipkartProductId` and `flipkartUrl` fields
-  - Enrichment utility available at `server/enrich-flipkart.ts`
-  - Products with Flipkart links display "Buy on Flipkart" buttons in UI
+- **Dynamic AI-Generated Products**: AI generates unlimited product ideas based on recipient profile
+- Amazon product search provides real products with images, ratings, and buy links
+- Products automatically stored in database for persistence and wishlist functionality
+- Amazon products marked with category "Amazon Product" and include Prime/Best Seller badges
+- **Amazon Integration**: Amazon products enriched with real-time data
+  - Schema temporarily stores Amazon URLs in `flipkartUrl` field
+  - Products include: images, prices, star ratings, Prime badges, Amazon's Choice badges
+  - Direct "Buy on Amazon" links to product pages
 
 ## Recent Changes (October 2025)
 
-### Flipkart E-Commerce Integration
-- Added RapidAPI integration for real-time Flipkart product search
-- Created `server/flipkart-service.ts` with product search functions
-- Updated database schema to store Flipkart product IDs and URLs
-- Enhanced UI to show "Buy on Flipkart" buttons when product links are available
-- Built enrichment utility to automatically link curated gifts with real Flipkart products
+### Amazon E-Commerce Integration (Latest)
+- **Migrated from curated database to unlimited AI-generated products**
+- Integrated RapidAPI Real-Time Amazon Data API for live Amazon product search
+- Created `server/amazon-service.ts` with product search functionality
+- Updated `server/ai-service.ts` to generate product suggestions (not just rank existing products)
+- Modified `/api/recommendations` endpoint to use AI + Amazon search instead of curated database
+- Amazon products stored as gift_product records with category "Amazon Product"
+- Enhanced UI to display Amazon products with images, star ratings, Prime badges, and buy links
 
 ### Key Features
-1. **Product Search API**: `/api/flipkart/search` endpoint for searching Flipkart products
-2. **Auto-Enrichment**: Utility script to match curated gifts with Flipkart inventory
-3. **Seamless Purchase Flow**: Direct links from recommendations to Flipkart product pages
-4. **Price Matching**: Search results filtered by price range to match gift budgets
+1. **AI Product Generation**: Gemini AI analyzes recipient profile and generates 5-8 personalized product ideas
+2. **Amazon Product Search**: Real-time search of Amazon catalog for each AI-generated idea
+3. **Unlimited Variety**: No longer limited to 203 curated products - can recommend anything on Amazon
+4. **Rich Product Data**: Images, prices, star ratings, review counts, Prime badges, Best Seller tags
+5. **Seamless Purchase Flow**: Direct "Buy on Amazon" links to product pages
+6. **Fallback System**: Rule-based product suggestions when Gemini API unavailable
 
-### How to Use Flipkart Integration
-1. Ensure `RAPIDAPI_KEY` is set in environment secrets
-2. Products with `flipkartUrl` automatically show "Buy on Flipkart" button
-3. Run enrichment script to link more products: `tsx server/enrich-flipkart.ts`
-4. Use `/api/flipkart/search` endpoint to manually search products
+### Architecture Changes
+- **POST /api/recommendations**: Now generates AI product ideas → searches Amazon → stores results
+- **GET /api/recommendations/:sessionId**: Enriches Amazon products with badges and pricing data
+- **Database Storage**: Amazon products stored as gift_product records for persistence
+- **AI Workflow**: Gemini generates product ideas based on interests, personality, and occasion
+- **Fallback Strategy**: Interest-to-search-query mapping ensures system works without AI
+
+### How It Works
+1. User submits recipient profile (interests, personality, budget, occasion)
+2. Gemini AI analyzes profile and generates 5-8 product suggestions with reasoning
+3. Each suggestion is searched on Amazon to find real products
+4. Top-rated products with matching budgets are returned
+5. Products stored in database and displayed with images, ratings, and buy links
+6. Users can save to wishlist and request personalized gift messages
