@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import type { GiftFinderRequest, GiftProduct } from "@shared/schema";
+import { searchAmazonProducts, type AmazonProduct } from "./amazon-service";
 
 // DON'T DELETE THIS COMMENT
 // Using Gemini 2.5 Flash for gift recommendations
@@ -8,6 +9,201 @@ import type { GiftFinderRequest, GiftProduct } from "@shared/schema";
 const ai = new GoogleGenAI({ 
   apiKey: process.env.GEMINI_API_KEY || "" 
 });
+
+export interface AIProductSuggestion {
+  searchQuery: string;
+  reasoning: string;
+  relevanceScore: number;
+  category: string;
+}
+
+export interface AIGeneratedRecommendation {
+  amazonProduct: AmazonProduct;
+  aiReasoning: string;
+  relevanceScore: number;
+}
+
+/**
+ * NEW AI APPROACH: Generate product suggestions and search Amazon
+ * This replaces the curated dataset approach with unlimited real products
+ */
+export async function generateAIProductSuggestions(
+  request: GiftFinderRequest
+): Promise<AIGeneratedRecommendation[]> {
+  const systemPrompt = `You are an expert gift advisor with deep knowledge of personality psychology, relationships, and thoughtful gift-giving. Your task is to analyze the recipient's profile and suggest specific product ideas that would make perfect gifts.
+
+Based on the recipient's profile, generate 6-8 specific product suggestions that can be purchased on Amazon. For each suggestion:
+- Provide a specific search query (2-5 words) that will find the product on Amazon
+- Write a compelling 2-3 sentence explanation of why this gift is perfect for them
+- Give a relevance score from 1-100
+- Specify the product category
+
+Consider:
+- The recipient's interests and hobbies
+- Their personality traits and style
+- The occasion and emotional context
+- The relationship between giver and recipient
+- The budget constraints
+- Age appropriateness
+
+Return suggestions as a JSON array ordered by relevance score (highest first).`;
+
+  const userPrompt = `Recipient Profile:
+${request.recipientName ? `Name: ${request.recipientName}` : ""}
+${request.recipientAge ? `Age: ${request.recipientAge}` : ""}
+Relationship: ${request.relationship}
+Interests: ${request.interests.join(", ")}
+${request.personality ? `Personality/Style: ${request.personality}` : ""}
+Budget: ${request.budget}
+Occasion: ${request.occasion}
+
+Generate 6-8 specific product suggestions for gifts available on Amazon. Return ONLY valid JSON in this exact format:
+{
+  "suggestions": [
+    {
+      "searchQuery": "wireless noise cancelling headphones",
+      "reasoning": "why this gift is perfect for them based on their interests and personality",
+      "relevanceScore": 95,
+      "category": "Electronics"
+    }
+  ]
+}`;
+
+  try {
+    // Add timeout to prevent hanging
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error("Gemini API timeout")), 15000);
+    });
+
+    const apiPromise = ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      config: {
+        systemInstruction: systemPrompt,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: "object",
+          properties: {
+            suggestions: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  searchQuery: { type: "string" },
+                  reasoning: { type: "string" },
+                  relevanceScore: { type: "number" },
+                  category: { type: "string" }
+                },
+                required: ["searchQuery", "reasoning", "relevanceScore", "category"]
+              }
+            }
+          },
+          required: ["suggestions"]
+        }
+      },
+      contents: userPrompt,
+    });
+
+    const response = await Promise.race([apiPromise, timeoutPromise]) as any;
+    const content = response.text;
+    
+    if (!content) {
+      throw new Error("No response from Gemini");
+    }
+
+    const result = JSON.parse(content);
+    const suggestions: AIProductSuggestion[] = result.suggestions || [];
+
+    // Search Amazon for each AI suggestion
+    const recommendations: AIGeneratedRecommendation[] = [];
+    
+    for (const suggestion of suggestions) {
+      try {
+        // Search Amazon for this product suggestion
+        const searchResult = await searchAmazonProducts(suggestion.searchQuery, 3);
+        
+        // Take the top result and combine with AI reasoning
+        if (searchResult.products.length > 0) {
+          const topProduct = searchResult.products[0];
+          recommendations.push({
+            amazonProduct: topProduct,
+            aiReasoning: suggestion.reasoning,
+            relevanceScore: suggestion.relevanceScore,
+          });
+        }
+      } catch (error) {
+        console.error(`Error searching Amazon for "${suggestion.searchQuery}":`, error);
+        // Continue with other suggestions
+      }
+    }
+
+    return recommendations;
+  } catch (error) {
+    console.error("Error generating AI product suggestions:", error);
+    console.log("Falling back to rule-based product suggestions");
+    
+    // Fallback to rule-based suggestions
+    return generateRuleBasedProductSuggestions(request);
+  }
+}
+
+/**
+ * Rule-based fallback for product suggestions
+ */
+async function generateRuleBasedProductSuggestions(
+  request: GiftFinderRequest
+): Promise<AIGeneratedRecommendation[]> {
+  // Generate simple product ideas based on interests
+  const searchQueries: string[] = [];
+  
+  // Map interests to product search queries
+  const interestMap: Record<string, string[]> = {
+    "Technology": ["wireless earbuds", "smart watch", "portable charger"],
+    "Reading": ["kindle paperwhite", "book light", "bookends"],
+    "Fitness": ["yoga mat", "resistance bands", "water bottle"],
+    "Cooking": ["chef knife", "cookbook", "kitchen gadget"],
+    "Gaming": ["gaming headset", "game controller", "gaming mouse"],
+    "Music": ["bluetooth speaker", "headphones", "music streaming gift card"],
+    "Art": ["art supplies", "sketchbook", "painting set"],
+    "Travel": ["travel backpack", "luggage tags", "travel pillow"],
+    "Fashion": ["wallet", "sunglasses", "watch"],
+    "Sports": ["sports equipment", "gym bag", "fitness tracker"],
+  };
+
+  // Generate search queries based on interests
+  for (const interest of request.interests) {
+    const queries = interestMap[interest];
+    if (queries) {
+      searchQueries.push(...queries.slice(0, 2));
+    }
+  }
+
+  // If no matches, use generic gift ideas
+  if (searchQueries.length === 0) {
+    searchQueries.push("gift set", "personalized gift", "luxury gift");
+  }
+
+  // Search Amazon for each query
+  const recommendations: AIGeneratedRecommendation[] = [];
+  const uniqueQueries = [...new Set(searchQueries)].slice(0, 6);
+
+  for (const query of uniqueQueries) {
+    try {
+      const searchResult = await searchAmazonProducts(query, 1);
+      
+      if (searchResult.products.length > 0) {
+        recommendations.push({
+          amazonProduct: searchResult.products[0],
+          aiReasoning: `Great gift for someone interested in ${request.interests.join(", ")}`,
+          relevanceScore: 70,
+        });
+      }
+    } catch (error) {
+      console.error(`Error searching Amazon for "${query}":`, error);
+    }
+  }
+
+  return recommendations;
+}
 
 // AI-powered gift recommendations using Gemini
 export async function generateGiftRecommendations(
