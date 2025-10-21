@@ -59,14 +59,23 @@ export default function Results() {
   const loadMoreMutation = useMutation({
     mutationFn: async () => {
       // Retrieve original request data from localStorage
-      const storedRequest = localStorage.getItem(`giftai_request_${sessionId}`);
+      const storageKey = `giftai_request_${sessionId}`;
+      const storedRequest = localStorage.getItem(storageKey);
+      
       if (!storedRequest) {
-        throw new Error("Original request data not found");
+        console.error("localStorage key not found:", storageKey);
+        console.log("Available keys:", Object.keys(localStorage));
+        throw new Error("Please refresh the page and try again");
       }
+      
       const requestData = JSON.parse(storedRequest);
-      return await apiRequest("POST", `/api/recommendations/${sessionId}/more`, requestData);
+      console.log("Loading more recommendations with:", requestData);
+      
+      const response = await apiRequest("POST", `/api/recommendations/${sessionId}/more`, requestData);
+      return await response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      console.log("Load more success:", data);
       toast({
         title: "More Ideas Added",
         description: "We've found more gift recommendations for you!",
@@ -74,8 +83,9 @@ export default function Results() {
       queryClient.invalidateQueries({ queryKey: [`/api/recommendations/${sessionId}`] });
     },
     onError: (error: any) => {
+      console.error("Load more error:", error);
       toast({
-        title: "No More Ideas",
+        title: "Couldn't Load More",
         description: error.message || "We couldn't find any more suitable gifts.",
         variant: "destructive",
       });
