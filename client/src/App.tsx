@@ -7,6 +7,10 @@ import Home from "@/pages/Home";
 import Results from "@/pages/Results";
 import Auth from "@/pages/Auth";
 import Wishlist from "@/pages/Wishlist";
+import ChatFinder from "@/pages/ChatFinder";
+import TrendingPage from "@/pages/TrendingPage";
+import RecipientProfilesPage from "@/pages/RecipientProfilesPage";
+import PublicWishlistPage from "@/pages/PublicWishlistPage";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -16,6 +20,10 @@ function Router() {
       <Route path="/auth" component={Auth} />
       <Route path="/wishlist" component={Wishlist} />
       <Route path="/results/:sessionId" component={Results} />
+      <Route path="/chat" component={ChatFinder} />
+      <Route path="/trending" component={TrendingPage} />
+      <Route path="/recipients" component={RecipientProfilesPage} />
+      <Route path="/wishlist/shared/:token" component={PublicWishlistPage} />
       <Route component={NotFound} />
     </Switch>
   );
