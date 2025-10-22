@@ -6,7 +6,7 @@ GiftAI is an AI-powered gift recommendation platform that helps users find perso
 
 ## User Preferences
 
-Preferred communication style: Simple, everyday language.
+Preferred communication style: Simple, everyday laguage.
 
 ## System Architecture
 
