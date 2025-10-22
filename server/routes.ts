@@ -359,7 +359,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               product: {
                 ...product,
                 amazonUrl: product.flipkartUrl, // We stored Amazon URL in flipkartUrl field
-                amazonPrice: `$${product.priceMin.toFixed(2)}`,
+                amazonPrice: `₹${product.priceMin}`,
                 // Extract Amazon badges from tags
                 isPrime: product.tags?.includes("Prime") || false,
                 isBestSeller: product.tags?.includes("Best Seller") || false,
