@@ -365,8 +365,9 @@ export default function Results() {
                     matchDetails={matchDetails}
                   >
                     <Card 
-                      className="border-border bg-card/50 backdrop-blur-sm hover:bg-card/80 transition-all duration-300 hover:shadow-[0_8px_32px_rgba(168,85,247,0.2)] group h-full flex flex-col"
+                      className="card-3d border-border bg-card/50 backdrop-blur-sm hover:bg-card/80 transition-all duration-300 group h-full flex flex-col animate-slide-up"
                       data-testid={`card-recommendation-${rec.id}`}
+                      style={{ animationDelay: `${index * 0.1}s` }}
                     >
                       <CardHeader>
                         <div className="flex items-start justify-between mb-2">

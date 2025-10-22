@@ -3,7 +3,6 @@ import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Send, Sparkles, ArrowLeft } from "lucide-react";
 import Header from "@/components/Header";
 import type { ChatMessage } from "@shared/schema";
@@ -20,51 +19,22 @@ interface ConversationState {
   occasion?: string;
 }
 
-const QUESTIONS = [
-  {
-    id: "occasion",
-    question: "What's the occasion?",
-    quickReplies: ["Birthday", "Anniversary", "Wedding", "Graduation", "Just Because", "Festival"],
-  },
-  {
-    id: "relationship",
-    question: "What's your relationship with them?",
-    quickReplies: ["Friend", "Partner", "Parent", "Sibling", "Colleague", "Child"],
-  },
-  {
-    id: "interests",
-    question: "What are their interests? (You can select multiple)",
-    quickReplies: ["Technology", "Books", "Music", "Art", "Sports", "Cooking", "Travel", "Gaming", "Fashion", "Fitness"],
-    multiple: true,
-  },
-  {
-    id: "budget",
-    question: "What's your budget?",
-    quickReplies: ["Under ₹500", "₹500 - ₹2000", "₹2000 - ₹5000", "₹5000 - ₹10000", "₹10000+"],
-  },
-  {
-    id: "personality",
-    question: "How would you describe their personality?",
-    quickReplies: ["Adventurous", "Minimalist", "Traditional", "Trendy", "Practical", "Romantic"],
-  },
-];
-
 export default function ChatFinder() {
   const [, setLocation] = useLocation();
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
-      content: "Hi! I'm GiftAI. Let me help you find the perfect gift! What's the occasion?",
+      content: "Hi! I'm GiftAI, your personal gift recommendation assistant! 🎁 I'd love to help you find the perfect gift. Tell me about who you're shopping for - what's the occasion?",
       timestamp: new Date().toISOString(),
     },
   ]);
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [conversationState, setConversationState] = useState<ConversationState>({
     interests: [],
   });
   const [inputValue, setInputValue] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [readyToRecommend, setReadyToRecommend] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -85,87 +55,84 @@ export default function ChatFinder() {
     setMessages((prev) => [...prev, newMessage]);
   };
 
-  const simulateTyping = async (message: string) => {
-    setIsTyping(true);
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    setIsTyping(false);
-    addMessage("assistant", message);
-  };
-
-  const handleQuickReply = async (value: string) => {
-    const currentQuestion = QUESTIONS[currentQuestionIndex];
-    
-    addMessage("user", value);
-
-    if (currentQuestion.id === "interests" && currentQuestion.multiple) {
-      const newInterests = conversationState.interests.includes(value)
-        ? conversationState.interests.filter((i) => i !== value)
-        : [...conversationState.interests, value];
-      
-      setConversationState({ ...conversationState, interests: newInterests });
-      
-      if (newInterests.length > 0) {
-        await simulateTyping(
-          `Great! I've noted that they're into ${newInterests.join(", ")}. Feel free to add more or click "Continue" when you're done.`
-        );
-      }
-    } else {
-      setConversationState({
-        ...conversationState,
-        [currentQuestion.id]: value,
-      });
-
-      if (currentQuestionIndex < QUESTIONS.length - 1) {
-        setCurrentQuestionIndex(currentQuestionIndex + 1);
-        await simulateTyping(QUESTIONS[currentQuestionIndex + 1].question);
-      } else {
-        await generateRecommendations();
-      }
-    }
-  };
-
-  const handleContinue = async () => {
-    if (currentQuestionIndex < QUESTIONS.length - 1) {
-      setCurrentQuestionIndex(currentQuestionIndex + 1);
-      await simulateTyping(QUESTIONS[currentQuestionIndex + 1].question);
-    } else {
-      await generateRecommendations();
-    }
-  };
-
   const handleSendMessage = async () => {
-    if (!inputValue.trim()) return;
+    if (!inputValue.trim() || isTyping) return;
 
     const userInput = inputValue.trim();
     addMessage("user", userInput);
     setInputValue("");
+    setIsTyping(true);
 
-    await simulateTyping(
-      "Thanks for sharing that! Let me use the quick options to make this faster."
-    );
+    try {
+      // If ready to recommend, generate recommendations
+      if (readyToRecommend) {
+        await generateRecommendations();
+        return;
+      }
+
+      // Otherwise, process the message conversationally
+      const response = await apiRequest("POST", "/api/chat", {
+        message: userInput,
+        conversationState,
+      });
+
+      const data = await response.json();
+      
+      // Simulate typing delay for more natural feel
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      setIsTyping(false);
+      
+      // Update conversation state
+      setConversationState(data.conversationState);
+      setReadyToRecommend(data.readyToRecommend);
+      
+      // Add AI response
+      addMessage("assistant", data.response);
+
+      // If ready to recommend, add a prompt
+      if (data.readyToRecommend) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        addMessage("assistant", "Great! I have all the information I need. Would you like me to find some amazing gift ideas for you? Just say 'yes' or 'find gifts' when you're ready!");
+      }
+      
+    } catch (error) {
+      console.error("Error sending message:", error);
+      setIsTyping(false);
+      addMessage("assistant", "I apologize, but I'm having trouble processing that. Could you please try again?");
+      toast({
+        title: "Error",
+        description: "Failed to process your message. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   const generateRecommendations = async () => {
     if (!conversationState.relationship || !conversationState.budget || !conversationState.occasion) {
       toast({
         title: "Missing Information",
-        description: "Please answer all the questions to generate recommendations.",
+        description: "I still need a bit more information to find the perfect gift.",
         variant: "destructive",
       });
+      setIsTyping(false);
+      addMessage("assistant", "I still need to know the occasion, your relationship with the recipient, and your budget. Could you tell me more?");
       return;
     }
 
     if (conversationState.interests.length === 0) {
       toast({
         title: "Add Interests",
-        description: "Please select at least one interest.",
+        description: "Please tell me at least one thing they're interested in.",
         variant: "destructive",
       });
+      setIsTyping(false);
+      addMessage("assistant", "What are they interested in? This will help me find the perfect gift!");
       return;
     }
 
     setIsGenerating(true);
-    await simulateTyping("Perfect! Let me find the best gifts for you...");
+    setIsTyping(false);
+    addMessage("assistant", "Perfect! Let me search Amazon for the best gifts based on everything you've told me... 🎁✨");
 
     try {
       const response = await apiRequest("POST", "/api/recommendations", {
@@ -182,9 +149,8 @@ export default function ChatFinder() {
       
       queryClient.invalidateQueries({ queryKey: ["/api/recommendations", data.sessionId] });
       
-      await simulateTyping(
-        `I found ${data.recommendations.length} amazing gift ideas for you! Let me show you...`
-      );
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      addMessage("assistant", `Wonderful! I found ${data.recommendations.length} amazing gift ideas on Amazon that I think they'll absolutely love! Let me show you...`);
 
       setTimeout(() => {
         setLocation(`/results/${data.sessionId}`);
@@ -197,11 +163,9 @@ export default function ChatFinder() {
         variant: "destructive",
       });
       setIsGenerating(false);
+      addMessage("assistant", "I'm sorry, I encountered an error while searching for gifts. Could you try again?");
     }
   };
-
-  const currentQuestion = QUESTIONS[currentQuestionIndex];
-  const showQuickReplies = currentQuestion && !isGenerating;
 
   return (
     <div className="min-h-screen bg-background">
@@ -214,6 +178,7 @@ export default function ChatFinder() {
             size="sm"
             onClick={() => setLocation("/")}
             data-testid="button-back"
+            className="hover-elevate active-elevate-2"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Home
@@ -223,50 +188,51 @@ export default function ChatFinder() {
             size="sm"
             onClick={() => setLocation("/")}
             data-testid="button-switch-form"
+            className="hover-elevate active-elevate-2"
           >
             Switch to Form Mode
           </Button>
         </div>
 
-        <Card className="flex flex-col h-[calc(100vh-250px)] overflow-hidden">
+        <Card className="flex flex-col h-[calc(100vh-250px)] overflow-hidden border-2 shadow-lg">
           <div className="flex-1 overflow-y-auto p-6 space-y-4">
             {messages.map((message, index) => (
               <div
                 key={index}
                 className={`flex ${
                   message.role === "user" ? "justify-end" : "justify-start"
-                }`}
+                } animate-fade-in`}
                 data-testid={`message-${message.role}-${index}`}
               >
                 <div
-                  className={`max-w-[80%] rounded-lg px-4 py-3 ${
+                  className={`max-w-[80%] rounded-2xl px-5 py-4 shadow-sm transition-all duration-300 hover:shadow-md ${
                     message.role === "user"
                       ? "bg-primary text-primary-foreground"
                       : "bg-muted text-foreground"
                   }`}
                 >
                   {message.role === "assistant" && (
-                    <div className="flex items-center gap-2 mb-1">
-                      <Sparkles className="h-4 w-4" />
-                      <span className="text-sm font-medium">GiftAI</span>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Sparkles className="h-4 w-4 animate-pulse" />
+                      <span className="text-sm font-semibold">GiftAI</span>
                     </div>
                   )}
-                  <p className="text-sm">{message.content}</p>
+                  <p className="text-sm leading-relaxed">{message.content}</p>
                 </div>
               </div>
             ))}
 
             {isTyping && (
-              <div className="flex justify-start" data-testid="typing-indicator">
-                <div className="bg-muted rounded-lg px-4 py-3 max-w-[80%]">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Sparkles className="h-4 w-4" />
-                    <span className="text-sm font-medium">GiftAI</span>
+              <div className="flex justify-start animate-fade-in" data-testid="typing-indicator">
+                <div className="bg-muted rounded-2xl px-5 py-4 max-w-[80%] shadow-sm">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Sparkles className="h-4 w-4 animate-pulse" />
+                    <span className="text-sm font-semibold">GiftAI</span>
                   </div>
                   <div className="flex gap-1">
-                    <div className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce" />
-                    <div className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce delay-100" />
-                    <div className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce delay-200" />
+                    <div className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <div className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <div className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                   </div>
                 </div>
               </div>
@@ -275,58 +241,27 @@ export default function ChatFinder() {
             <div ref={messagesEndRef} />
           </div>
 
-          {showQuickReplies && (
-            <div className="border-t p-4 bg-muted/30">
-              <div className="flex flex-wrap gap-2 mb-3">
-                {currentQuestion.quickReplies.map((reply) => {
-                  const isSelected =
-                    currentQuestion.id === "interests" &&
-                    conversationState.interests.includes(reply);
-                  
-                  return (
-                    <Badge
-                      key={reply}
-                      variant={isSelected ? "default" : "outline"}
-                      className="cursor-pointer hover-elevate active-elevate-2"
-                      onClick={() => handleQuickReply(reply)}
-                      data-testid={`quick-reply-${reply.toLowerCase().replace(/\s+/g, "-")}`}
-                    >
-                      {reply}
-                    </Badge>
-                  );
-                })}
-              </div>
-
-              {currentQuestion.multiple && conversationState.interests.length > 0 && (
-                <Button
-                  onClick={handleContinue}
-                  className="w-full"
-                  data-testid="button-continue"
-                >
-                  Continue
-                </Button>
-              )}
-            </div>
-          )}
-
-          <div className="border-t p-4 flex gap-2">
+          <div className="border-t p-4 flex gap-3 bg-muted/20">
             <Input
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyPress={(e) => {
-                if (e.key === "Enter") {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
                   handleSendMessage();
                 }
               }}
-              placeholder="Type a message..."
-              disabled={isGenerating}
+              placeholder="Type your message here..."
+              disabled={isGenerating || isTyping}
               data-testid="input-message"
+              className="text-base shadow-sm"
             />
             <Button
               onClick={handleSendMessage}
-              disabled={!inputValue.trim() || isGenerating}
+              disabled={!inputValue.trim() || isGenerating || isTyping}
               size="icon"
               data-testid="button-send"
+              className="hover-elevate active-elevate-2 transition-all duration-200"
             >
               <Send className="h-4 w-4" />
             </Button>

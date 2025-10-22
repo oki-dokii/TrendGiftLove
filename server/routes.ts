@@ -17,7 +17,6 @@ import {
 } from "./ai-service";
 import { randomUUID } from "crypto";
 import { setupAuth, isAuthenticated } from "./replitAuth";
-import { searchGiftProducts, searchFlipkartProducts } from "./flipkart-service";
 
 // DON'T DELETE THIS COMMENT
 // Blueprint reference: javascript_log_in_with_replit
@@ -35,6 +34,126 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
+  
+  // POST /api/chat - Conversational chat endpoint
+  app.post("/api/chat", async (req, res) => {
+    try {
+      const chatSchema = z.object({
+        message: z.string(),
+        conversationState: z.object({
+          recipientName: z.string().optional(),
+          recipientAge: z.number().optional(),
+          relationship: z.string().optional(),
+          interests: z.array(z.string()).default([]),
+          personality: z.string().optional(),
+          budget: z.string().optional(),
+          occasion: z.string().optional(),
+        }),
+      });
+      
+      const { message, conversationState } = chatSchema.parse(req.body);
+      
+      // Use AI to process the message and extract/update information
+      const systemPrompt = `You are GiftAI, a friendly and conversational gift recommendation assistant. Your role is to help users find the perfect gift by gathering information through natural conversation.
+
+You need to collect the following information:
+- occasion (Birthday, Anniversary, Wedding, Graduation, Festival, or Just Because)
+- relationship (Friend, Partner, Parent, Sibling, Colleague, Child, or other)
+- interests (at least one: Technology, Books, Music, Art, Sports, Cooking, Travel, Gaming, Fashion, Fitness, etc.)
+- budget (Under ₹500, ₹500-₹2000, ₹2000-₹5000, ₹5000-₹10000, ₹10000+)
+- personality (optional: Adventurous, Minimalist, Traditional, Trendy, Practical, Romantic, etc.)
+- recipientName (optional)
+- recipientAge (optional)
+
+Based on the user's message and current conversation state:
+1. Extract any new information from their message
+2. Determine what information is still missing
+3. Respond naturally and conversationally
+4. Ask for missing information in a friendly way
+5. When you have enough info (occasion, relationship, interests, budget), indicate readiness to generate recommendations
+
+Respond with JSON containing:
+- response: Your conversational response to the user
+- extractedInfo: Object with any newly extracted information fields
+- missingInfo: Array of field names still needed
+- readyToRecommend: boolean indicating if we have enough info to recommend gifts`;
+
+      const userPrompt = `Current conversation state: ${JSON.stringify(conversationState)}
+
+User's message: "${message}"
+
+Extract information from the user's message, update the conversation state, and respond naturally. Return ONLY valid JSON.`;
+
+      const ai = new (await import("@google/genai")).GoogleGenAI({ 
+        apiKey: process.env.GEMINI_API_KEY || "" 
+      });
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        config: {
+          systemInstruction: systemPrompt,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: "object",
+            properties: {
+              response: { type: "string" },
+              extractedInfo: {
+                type: "object",
+                properties: {
+                  occasion: { type: "string" },
+                  relationship: { type: "string" },
+                  interests: { type: "array", items: { type: "string" } },
+                  budget: { type: "string" },
+                  personality: { type: "string" },
+                  recipientName: { type: "string" },
+                  recipientAge: { type: "number" }
+                }
+              },
+              missingInfo: { type: "array", items: { type: "string" } },
+              readyToRecommend: { type: "boolean" }
+            },
+            required: ["response", "extractedInfo", "missingInfo", "readyToRecommend"]
+          }
+        },
+        contents: userPrompt,
+      });
+
+      const content = response.text;
+      if (!content) {
+        throw new Error("No response from AI");
+      }
+
+      const result = JSON.parse(content);
+      
+      // Merge extracted info with conversation state
+      const updatedState = {
+        ...conversationState,
+        ...result.extractedInfo,
+        interests: result.extractedInfo.interests?.length > 0 
+          ? result.extractedInfo.interests 
+          : conversationState.interests,
+      };
+
+      res.json({
+        response: result.response,
+        conversationState: updatedState,
+        readyToRecommend: result.readyToRecommend,
+      });
+
+    } catch (error) {
+      console.error("Error in chat:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          error: "Invalid request data", 
+          details: error.errors 
+        });
+      }
+      res.status(500).json({ 
+        error: "Failed to process message",
+        response: "I'm sorry, I'm having trouble understanding. Could you please rephrase that?",
+      });
     }
   });
   
@@ -128,13 +247,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
               rec.amazonProduct.isAmazonChoice ? "Amazon's Choice" : "",
             ].filter(Boolean),
             imageUrl: rec.amazonProduct.imageUrl,
-            flipkartUrl: null, // Not using Flipkart for these
+            amazonUrl: rec.amazonProduct.url,
+            amazonPrice: rec.amazonProduct.price,
+            amazonRating: rec.amazonProduct.rating?.toString() || null,
+            amazonNumRatings: rec.amazonProduct.numRatings?.toString() || null,
+            isPrime: rec.amazonProduct.isPrime ? "true" : "false",
+            isBestSeller: rec.amazonProduct.isBestSeller ? "true" : "false",
+            isAmazonChoice: rec.amazonProduct.isAmazonChoice ? "true" : "false",
           });
           
-          // Update the product with Amazon-specific data (these fields should be in the schema)
-          const updatedProduct = await storage.updateGiftProduct(amazonProduct.id, {
-            flipkartUrl: rec.amazonProduct.url, // Store Amazon URL in flipkartUrl field for now
-          });
+          // Product already has Amazon data, no need for update
+          const updatedProduct = amazonProduct;
           
           // Create recommendation pointing to this product
           const recommendation = await storage.createRecommendation({
@@ -239,13 +362,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
               rec.amazonProduct.isAmazonChoice ? "Amazon's Choice" : "",
             ].filter(Boolean),
             imageUrl: rec.amazonProduct.imageUrl,
-            flipkartUrl: null,
+            amazonUrl: rec.amazonProduct.url,
+            amazonPrice: rec.amazonProduct.price,
+            amazonRating: rec.amazonProduct.rating?.toString() || null,
+            amazonNumRatings: rec.amazonProduct.numRatings?.toString() || null,
+            isPrime: rec.amazonProduct.isPrime ? "true" : "false",
+            isBestSeller: rec.amazonProduct.isBestSeller ? "true" : "false",
+            isAmazonChoice: rec.amazonProduct.isAmazonChoice ? "true" : "false",
           });
           
-          // Update with Amazon URL
-          const updatedProduct = await storage.updateGiftProduct(amazonProduct.id, {
-            flipkartUrl: rec.amazonProduct.url,
-          });
+          // Product already has Amazon data, no need for update
+          const updatedProduct = amazonProduct;
           
           // Create recommendation pointing to this product with SAME sessionId
           const recommendation = await storage.createRecommendation({
@@ -358,12 +485,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
               ...rec,
               product: {
                 ...product,
-                amazonUrl: product.flipkartUrl, // We stored Amazon URL in flipkartUrl field
-                amazonPrice: `₹${product.priceMin}`,
-                // Extract Amazon badges from tags
-                isPrime: product.tags?.includes("Prime") || false,
-                isBestSeller: product.tags?.includes("Best Seller") || false,
-                isAmazonChoice: product.tags?.includes("Amazon's Choice") || false,
+                amazonUrl: product.amazonUrl,
+                amazonPrice: product.amazonPrice || `₹${product.priceMin}`,
+                amazonRating: product.amazonRating,
+                amazonNumRatings: product.amazonNumRatings,
+                isPrime: product.isPrime === "true",
+                isBestSeller: product.isBestSeller === "true",
+                isAmazonChoice: product.isAmazonChoice === "true",
               },
             };
           }
@@ -685,34 +813,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // GET /api/flipkart/search - Search Flipkart products via RapidAPI
-  app.get("/api/flipkart/search", async (req, res) => {
-    try {
-      const searchSchema = z.object({
-        query: z.string(),
-        page: z.string().regex(/^\d+$/).transform(Number).optional().default('1'),
-        sortBy: z.enum(['popularity', 'price_low_to_high', 'price_high_to_low', 'relevance']).optional().default('popularity'),
-      });
-      
-      const { query, page, sortBy } = searchSchema.parse(req.query);
-      
-      const results = await searchFlipkartProducts(query, page, sortBy);
-      
-      res.json(results);
-    } catch (error) {
-      console.error("Error searching Flipkart:", error);
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ 
-          error: "Invalid query parameters", 
-          details: error.errors 
-        });
-      }
-      res.status(500).json({ 
-        error: "Failed to search Flipkart products",
-        message: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
 
   // === RECIPIENT PROFILES ROUTES ===
   

@@ -44,8 +44,14 @@ export const giftProducts = pgTable("gift_products", {
   affiliateLink: text("affiliate_link"),
   imageUrl: text("image_url"),
   tags: text("tags").array(),
-  flipkartProductId: text("flipkart_product_id"), // Link to real Flipkart product
-  flipkartUrl: text("flipkart_url"), // Direct link to buy on Flipkart
+  amazonProductId: text("amazon_product_id"), // Link to real Amazon product
+  amazonUrl: text("amazon_url"), // Direct link to buy on Amazon
+  amazonPrice: text("amazon_price"), // Current price on Amazon
+  amazonRating: text("amazon_rating"), // Amazon product rating
+  amazonNumRatings: text("amazon_num_ratings"), // Number of ratings
+  isPrime: text("is_prime"), // Amazon Prime eligible
+  isBestSeller: text("is_best_seller"), // Amazon Best Seller badge
+  isAmazonChoice: text("is_amazon_choice"), // Amazon's Choice badge
 });
 
 // Gift recommendations (AI-generated for users)
