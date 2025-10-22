@@ -224,7 +224,7 @@ Extract information from the user's message, update the conversation state, and 
         // Get all products from database
         const allProducts = await storage.getAllGifts();
         
-        // Filter by budget
+        // Filter by budget - relaxed filter that includes overlapping ranges
         const budgetMap: Record<string, [number, number]> = {
           "Under ₹500": [0, 500],
           "₹500-₹2000": [500, 2000],
@@ -233,12 +233,19 @@ Extract information from the user's message, update the conversation state, and 
           "₹10000+": [10000, 999999],
         };
         const [minBudget, maxBudget] = budgetMap[request.budget] || [0, 999999];
-        const budgetFiltered = allProducts.filter(p => p.priceMin >= minBudget && p.priceMax <= maxBudget);
         
-        // Use AI to rank database products
-        const aiResult = await generateGiftRecommendations(request, budgetFiltered.length > 0 ? budgetFiltered : allProducts);
+        // Relaxed budget filter: include if price range overlaps with budget at all
+        // Also include products with priceMin=0 (unpriced items)
+        const budgetFiltered = allProducts.filter(p => 
+          p.priceMin === 0 || // Include unpriced items
+          (p.priceMax >= minBudget && p.priceMin <= maxBudget) // Overlapping ranges
+        );
         
-        // Convert database recommendations to Amazon-like format for consistency
+        // Use AI to rank database products, fallback to all products if filter too restrictive
+        const productsToRank = budgetFiltered.length > 0 ? budgetFiltered : allProducts;
+        const aiResult = await generateGiftRecommendations(request, productsToRank);
+        
+        // Use existing database products (no duplication)
         for (const rec of aiResult.recommendations.slice(0, 6)) {
           const product = await storage.getGiftById(rec.productId);
           if (product) {
@@ -246,7 +253,7 @@ Extract information from the user's message, update the conversation state, and 
               amazonProduct: {
                 asin: product.id,
                 title: product.name,
-                price: `₹${product.priceMin}`,
+                price: product.priceMin > 0 ? `₹${product.priceMin}` : "Price not available",
                 currency: "INR",
                 numRatings: 0,
                 url: product.amazonUrl || "#",
@@ -260,6 +267,8 @@ Extract information from the user's message, update the conversation state, and 
             });
           }
         }
+        
+        console.log(`Database fallback generated ${amazonRecommendations.length} recommendations from ${productsToRank.length} products`);
       }
       
       if (amazonRecommendations.length === 0) {
@@ -276,33 +285,45 @@ Extract information from the user's message, update the conversation state, and 
       const savedRecommendations = [];
       for (const rec of amazonRecommendations) {
         try {
-          // Create a minimal product record for this Amazon product
-          const amazonProduct = await storage.createGiftProduct({
-            name: rec.amazonProduct.title,
-            description: rec.aiReasoning,
-            category: "Amazon Product",
-            priceMin: Math.round(parseFloat(rec.amazonProduct.price.replace(/[^0-9.]/g, '')) || 0),
-            priceMax: Math.round(parseFloat(rec.amazonProduct.price.replace(/[^0-9.]/g, '')) || 0),
-            interests: request.interests,
-            occasions: [request.occasion],
-            relationship: [request.relationship],
-            tags: [
-              rec.amazonProduct.isPrime ? "Prime" : "",
-              rec.amazonProduct.isBestSeller ? "Best Seller" : "",
-              rec.amazonProduct.isAmazonChoice ? "Amazon's Choice" : "",
-            ].filter(Boolean),
-            imageUrl: rec.amazonProduct.imageUrl,
-            amazonUrl: rec.amazonProduct.url,
-            amazonPrice: rec.amazonProduct.price,
-            amazonRating: rec.amazonProduct.rating?.toString() || null,
-            amazonNumRatings: rec.amazonProduct.numRatings?.toString() || null,
-            isPrime: rec.amazonProduct.isPrime ? "true" : "false",
-            isBestSeller: rec.amazonProduct.isBestSeller ? "true" : "false",
-            isAmazonChoice: rec.amazonProduct.isAmazonChoice ? "true" : "false",
-          });
+          // Check if this is an existing database product (from fallback) or a new Amazon product
+          let productId: string;
+          let product: GiftProduct;
           
-          // Product already has Amazon data, no need for update
-          const updatedProduct = amazonProduct;
+          // If ASIN is a UUID, it's an existing database product - reuse it
+          const isExistingProduct = rec.amazonProduct.asin.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+          
+          if (isExistingProduct) {
+            // Reuse existing database product
+            productId = rec.amazonProduct.asin;
+            product = (await storage.getGiftById(productId))!;
+          } else {
+            // Create a new product record for this Amazon product
+            const amazonProduct = await storage.createGiftProduct({
+              name: rec.amazonProduct.title,
+              description: rec.aiReasoning,
+              category: "Amazon Product",
+              priceMin: Math.round(parseFloat(rec.amazonProduct.price.replace(/[^0-9.]/g, '')) || 0),
+              priceMax: Math.round(parseFloat(rec.amazonProduct.price.replace(/[^0-9.]/g, '')) || 0),
+              interests: request.interests,
+              occasions: [request.occasion],
+              relationship: [request.relationship],
+              tags: [
+                rec.amazonProduct.isPrime ? "Prime" : "",
+                rec.amazonProduct.isBestSeller ? "Best Seller" : "",
+                rec.amazonProduct.isAmazonChoice ? "Amazon's Choice" : "",
+              ].filter(Boolean),
+              imageUrl: rec.amazonProduct.imageUrl,
+              amazonUrl: rec.amazonProduct.url,
+              amazonPrice: rec.amazonProduct.price,
+              amazonRating: rec.amazonProduct.rating?.toString() || null,
+              amazonNumRatings: rec.amazonProduct.numRatings?.toString() || null,
+              isPrime: rec.amazonProduct.isPrime ? "true" : "false",
+              isBestSeller: rec.amazonProduct.isBestSeller ? "true" : "false",
+              isAmazonChoice: rec.amazonProduct.isAmazonChoice ? "true" : "false",
+            });
+            productId = amazonProduct.id;
+            product = amazonProduct;
+          }
           
           // Create recommendation pointing to this product
           const recommendation = await storage.createRecommendation({
@@ -314,7 +335,7 @@ Extract information from the user's message, update the conversation state, and 
             personality: request.personality || null,
             budget: request.budget,
             occasion: request.occasion,
-            productId: amazonProduct.id,
+            productId: productId,
             aiReasoning: rec.aiReasoning,
             personalizedMessage: null, // Generated on demand
             relevanceScore: rec.relevanceScore,
@@ -324,7 +345,7 @@ Extract information from the user's message, update the conversation state, and 
           savedRecommendations.push({
             ...recommendation,
             product: {
-              ...(updatedProduct || amazonProduct),
+              ...product,
               amazonUrl: rec.amazonProduct.url,
               amazonPrice: rec.amazonProduct.price,
               amazonRating: rec.amazonProduct.rating,
