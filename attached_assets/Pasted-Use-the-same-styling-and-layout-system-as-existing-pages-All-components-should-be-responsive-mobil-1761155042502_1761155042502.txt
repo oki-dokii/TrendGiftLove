@@ -1,0 +1,218 @@
+Use the same styling and layout system as existing pages.
+All components should be responsive, mobile-first, and dark-mode compatible.
+
+
+🎯 Features to Implement
+
+
+
+Interactive Gift Finder Chat
+
+
+Create a new page called ChatFinder.tsx that provides a conversational way to collect recipient details.
+
+
+Chat layout similar to a messaging app (AI messages on left, user messages on right).
+
+
+Include typing animation (“GiftAI is thinking…”) and emoji-friendly text bubbles.
+
+
+Add quick reply buttons for questions like “What’s the occasion?” or “What’s their personality like?”
+
+
+Use a ChatInput.tsx component with text box + send button.
+
+
+When the conversation ends, call the existing /api/recommendations endpoint with the collected profile data.
+
+
+Include a “Switch to form mode” button at the top for users who prefer the classic form.
+
+
+
+Smart Filters on Results Page
+
+
+Enhance the existing results page with a new FilterBar.tsx component.
+
+
+Filters:
+
+
+Price range slider
+
+
+Prime only toggle
+
+
+4⭐+ only toggle
+
+
+Category dropdown (interests/tags)
+
+
+Add an “Apply Filters” button that updates the results list (trigger a React Query refetch).
+
+
+Make it collapsible on mobile (drawer style).
+
+
+
+Wishlist Sharing
+
+
+Add two new components:
+
+
+ShareWishlistModal.tsx:
+
+
+Displays a shareable wishlist link (e.g., giftai.com/wishlist/:id)
+
+
+“Copy link” and “Share via WhatsApp” buttons
+
+
+Clean UI using Shadcn’s Dialog or Sheet component
+
+
+PublicWishlistPage.tsx:
+
+
+Read-only public view of a shared wishlist
+
+
+Shows wishlist items in card format with product image, title, price, and “Buy on Amazon” link.
+
+
+Simple “Shared by [username or anonymous]” header.
+
+
+
+Trending Gifts Dashboard
+
+
+Add a new page called TrendingPage.tsx.
+
+
+Display trending gifts in a grid or carousel format (using Embla Carousel if available).
+
+
+Each gift card: product image, title, rating, and “Buy” button.
+
+
+Include tabs or dropdown filters:
+
+
+“All”
+
+
+“Occasions”
+
+
+“Under $50”
+
+
+“Most saved this week”
+
+
+Add a “Trending Now” section snippet for the homepage (optional).
+
+
+
+Login with Google/Apple
+
+
+Update the login modal/page:
+
+
+In AuthModal.tsx (or equivalent), add “Continue with Google” and “Continue with Apple” buttons.
+
+
+Use Shadcn’s button components and brand colors.
+
+
+Include an optional UserAvatar.tsx component for the logged-in user in the header with dropdown actions (View Wishlist, Saved Profiles, Logout).
+
+
+
+Saved Recipient Profiles
+
+
+Add the following pages and components:
+
+
+RecipientProfilesPage.tsx
+
+
+Grid or list of saved recipients (cards with name, age, interests).
+
+
+Buttons: “Use for new recommendations,” “Edit,” “Delete.”
+
+
+“Add new recipient” button (opens form modal).
+
+
+RecipientProfileForm.tsx
+
+
+Form with fields: name, gender, age, interests, personality, and occasion.
+
+
+Reuse existing form field styles and validation with React Hook Form + Zod.
+
+
+Option: “Save profile after generating gifts.”
+
+
+💄 Design Guidelines
+
+
+Keep everything consistent with existing brand identity:
+
+
+Primary: Deep purple-blue (#4F46E5)
+
+
+Accent: Warm coral (#F87171)
+
+
+Use Shadcn components (Card, Dialog, Input, Button, Tabs, Avatar)
+
+
+Tailwind spacing system and typography scale
+
+
+Follow existing GiftAI layout (header, container widths, page sections)
+
+
+⚙️ General Notes
+
+
+All new pages should use TypeScript, functional components, and hooks.
+
+
+Integrate React Query for fetching and mutation where relevant.
+
+
+Routes:
+
+
+/chat → ChatFinder.tsx
+
+
+/trending → TrendingPage.tsx
+
+
+/wishlist/share → ShareWishlistModal.tsx
+
+
+/wishlist/:id → PublicWishlistPage.tsx
+
+
+/recipients → RecipientProfilesPage.tsx
+
+
+All UI elements must support dark mode and mobile responsiveness.

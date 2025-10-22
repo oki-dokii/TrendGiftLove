@@ -66,16 +66,44 @@ export const giftRecommendations = pgTable("gift_recommendations", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Saved recipient profiles (for repeat gift finding)
+export const recipientProfiles = pgTable("recipient_profiles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  name: text("name").notNull(),
+  gender: text("gender"),
+  age: integer("age"),
+  interests: text("interests").array().notNull(),
+  personality: text("personality"),
+  relationship: text("relationship"),
+  favoriteOccasions: text("favorite_occasions").array(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // User wishlists/buckets (bucket list for logged in users)
 export const wishlistItems = pgTable("wishlist_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").references(() => users.id), // logged in users
-  sessionId: varchar("session_id"), // anonymous users use sessionId
+  userId: varchar("user_id").references(() => users.id),
+  sessionId: varchar("session_id"),
   recommendationId: varchar("recommendation_id").references(() => giftRecommendations.id),
   productId: varchar("product_id").references(() => giftProducts.id),
   notes: text("notes"),
   reminder: timestamp("reminder"),
   createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Shared wishlists for public viewing
+export const sharedWishlists = pgTable("shared_wishlists", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  shareToken: varchar("share_token").unique().notNull(),
+  userId: varchar("user_id").references(() => users.id),
+  sessionId: varchar("session_id"),
+  title: text("title"),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow(),
+  viewCount: integer("view_count").default(0),
 });
 
 // Zod schemas for validation
@@ -93,6 +121,18 @@ export const insertWishlistItemSchema = createInsertSchema(wishlistItems).omit({
   createdAt: true,
 });
 
+export const insertRecipientProfileSchema = createInsertSchema(recipientProfiles).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertSharedWishlistSchema = createInsertSchema(sharedWishlists).omit({
+  id: true,
+  createdAt: true,
+  viewCount: true,
+});
+
 // Request schemas
 export const giftFinderRequestSchema = z.object({
   recipientName: z.string().optional(),
@@ -102,6 +142,12 @@ export const giftFinderRequestSchema = z.object({
   personality: z.string().optional(),
   budget: z.string(),
   occasion: z.string(),
+});
+
+export const chatMessageSchema = z.object({
+  role: z.enum(["user", "assistant"]),
+  content: z.string(),
+  timestamp: z.string(),
 });
 
 // Export types
@@ -117,4 +163,11 @@ export type InsertGiftRecommendation = z.infer<typeof insertGiftRecommendationSc
 export type WishlistItem = typeof wishlistItems.$inferSelect;
 export type InsertWishlistItem = z.infer<typeof insertWishlistItemSchema>;
 
+export type RecipientProfile = typeof recipientProfiles.$inferSelect;
+export type InsertRecipientProfile = z.infer<typeof insertRecipientProfileSchema>;
+
+export type SharedWishlist = typeof sharedWishlists.$inferSelect;
+export type InsertSharedWishlist = z.infer<typeof insertSharedWishlistSchema>;
+
 export type GiftFinderRequest = z.infer<typeof giftFinderRequestSchema>;
+export type ChatMessage = z.infer<typeof chatMessageSchema>;

@@ -4,6 +4,8 @@ import { storage } from "./storage";
 import { 
   giftFinderRequestSchema, 
   insertWishlistItemSchema,
+  insertRecipientProfileSchema,
+  insertSharedWishlistSchema,
   type GiftProduct 
 } from "@shared/schema";
 import { z } from "zod";
@@ -709,6 +711,205 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: "Failed to search Flipkart products",
         message: error instanceof Error ? error.message : "Unknown error"
       });
+    }
+  });
+
+  // === RECIPIENT PROFILES ROUTES ===
+  
+  // GET /api/recipient-profiles - Get all recipient profiles for authenticated user
+  app.get("/api/recipient-profiles", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profiles = await storage.getRecipientProfilesByUser(userId);
+      res.json(profiles);
+    } catch (error) {
+      console.error("Error fetching recipient profiles:", error);
+      res.status(500).json({ error: "Failed to fetch recipient profiles" });
+    }
+  });
+
+  // GET /api/recipient-profiles/:id - Get a specific recipient profile
+  app.get("/api/recipient-profiles/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const profile = await storage.getRecipientProfileById(id);
+      
+      if (!profile) {
+        return res.status(404).json({ error: "Profile not found" });
+      }
+      
+      // Verify the profile belongs to the authenticated user
+      if (profile.userId !== req.user.claims.sub) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      res.json(profile);
+    } catch (error) {
+      console.error("Error fetching recipient profile:", error);
+      res.status(500).json({ error: "Failed to fetch recipient profile" });
+    }
+  });
+
+  // POST /api/recipient-profiles - Create a new recipient profile
+  app.post("/api/recipient-profiles", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profileData = insertRecipientProfileSchema.parse({
+        ...req.body,
+        userId,
+      });
+      
+      const profile = await storage.createRecipientProfile(profileData);
+      res.json(profile);
+    } catch (error) {
+      console.error("Error creating recipient profile:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          error: "Invalid request data", 
+          details: error.errors 
+        });
+      }
+      res.status(500).json({ error: "Failed to create recipient profile" });
+    }
+  });
+
+  // PATCH /api/recipient-profiles/:id - Update a recipient profile
+  app.patch("/api/recipient-profiles/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const profile = await storage.getRecipientProfileById(id);
+      
+      if (!profile) {
+        return res.status(404).json({ error: "Profile not found" });
+      }
+      
+      // Verify the profile belongs to the authenticated user
+      if (profile.userId !== req.user.claims.sub) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      const updated = await storage.updateRecipientProfile(id, req.body);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating recipient profile:", error);
+      res.status(500).json({ error: "Failed to update recipient profile" });
+    }
+  });
+
+  // DELETE /api/recipient-profiles/:id - Delete a recipient profile
+  app.delete("/api/recipient-profiles/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const profile = await storage.getRecipientProfileById(id);
+      
+      if (!profile) {
+        return res.status(404).json({ error: "Profile not found" });
+      }
+      
+      // Verify the profile belongs to the authenticated user
+      if (profile.userId !== req.user.claims.sub) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      const success = await storage.deleteRecipientProfile(id);
+      res.json({ success });
+    } catch (error) {
+      console.error("Error deleting recipient profile:", error);
+      res.status(500).json({ error: "Failed to delete recipient profile" });
+    }
+  });
+
+  // === SHARED WISHLISTS ROUTES ===
+
+  // POST /api/wishlist/share - Create a shareable wishlist link
+  app.post("/api/wishlist/share", async (req: any, res) => {
+    try {
+      const shareToken = randomUUID().substring(0, 8);
+      
+      const shareData = insertSharedWishlistSchema.parse({
+        shareToken,
+        userId: req.isAuthenticated() ? req.user.claims.sub : null,
+        sessionId: req.body.sessionId || null,
+        title: req.body.title || "My Gift Wishlist",
+        description: req.body.description || null,
+      });
+      
+      const sharedWishlist = await storage.createSharedWishlist(shareData);
+      res.json(sharedWishlist);
+    } catch (error) {
+      console.error("Error creating shared wishlist:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          error: "Invalid request data", 
+          details: error.errors 
+        });
+      }
+      res.status(500).json({ error: "Failed to create shared wishlist" });
+    }
+  });
+
+  // GET /api/wishlist/shared/:token - Get a shared wishlist by token
+  app.get("/api/wishlist/shared/:token", async (req, res) => {
+    try {
+      const { token } = req.params;
+      const sharedWishlist = await storage.getSharedWishlistByToken(token);
+      
+      if (!sharedWishlist) {
+        return res.status(404).json({ error: "Shared wishlist not found" });
+      }
+      
+      // Increment view count
+      await storage.incrementWishlistViewCount(sharedWishlist.id);
+      
+      // Get wishlist items
+      const items = await storage.getWishlistItemsBySharedWishlist(sharedWishlist.id);
+      
+      // Enrich with product details
+      const enrichedItems = await Promise.all(
+        items.map(async (item) => {
+          const product = item.productId 
+            ? await storage.getGiftById(item.productId) 
+            : null;
+          return {
+            ...item,
+            product,
+          };
+        })
+      );
+      
+      res.json({
+        ...sharedWishlist,
+        items: enrichedItems,
+      });
+    } catch (error) {
+      console.error("Error fetching shared wishlist:", error);
+      res.status(500).json({ error: "Failed to fetch shared wishlist" });
+    }
+  });
+
+  // === TRENDING GIFTS ROUTE ===
+
+  // GET /api/gifts/trending - Get trending gifts based on save count
+  app.get("/api/gifts/trending", async (req, res) => {
+    try {
+      const limitSchema = z.object({
+        limit: z.string().regex(/^\d+$/).transform(Number).optional().default('20'),
+      });
+      
+      const { limit } = limitSchema.parse(req.query);
+      
+      // Get all gifts and sort by popularity (based on wishlist saves)
+      const allGifts = await storage.getAllGifts();
+      
+      // For now, return random selection of gifts as "trending"
+      // In production, you'd track actual save counts
+      const shuffled = allGifts.sort(() => Math.random() - 0.5);
+      const trending = shuffled.slice(0, limit);
+      
+      res.json(trending);
+    } catch (error) {
+      console.error("Error fetching trending gifts:", error);
+      res.status(500).json({ error: "Failed to fetch trending gifts" });
     }
   });
 

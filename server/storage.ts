@@ -7,14 +7,20 @@ import {
   type InsertGiftRecommendation,
   type WishlistItem,
   type InsertWishlistItem,
+  type RecipientProfile,
+  type InsertRecipientProfile,
+  type SharedWishlist,
+  type InsertSharedWishlist,
   giftProducts,
   giftRecommendations,
   wishlistItems,
   users,
+  recipientProfiles,
+  sharedWishlists,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { db } from "./db";
-import { eq, or } from "drizzle-orm";
+import { eq, or, desc, sql } from "drizzle-orm";
 
 // DON'T DELETE THIS COMMENT
 // Blueprint reference: javascript_database
@@ -50,6 +56,19 @@ export interface IStorage {
   getWishlistByUser(userId: string): Promise<WishlistItem[]>;
   addToWishlist(item: InsertWishlistItem): Promise<WishlistItem>;
   removeFromWishlist(id: string): Promise<boolean>;
+
+  // Recipient Profiles
+  getRecipientProfilesByUser(userId: string): Promise<RecipientProfile[]>;
+  getRecipientProfileById(id: string): Promise<RecipientProfile | undefined>;
+  createRecipientProfile(profile: InsertRecipientProfile): Promise<RecipientProfile>;
+  updateRecipientProfile(id: string, updates: Partial<RecipientProfile>): Promise<RecipientProfile | undefined>;
+  deleteRecipientProfile(id: string): Promise<boolean>;
+
+  // Shared Wishlists
+  createSharedWishlist(data: InsertSharedWishlist): Promise<SharedWishlist>;
+  getSharedWishlistByToken(token: string): Promise<SharedWishlist | undefined>;
+  incrementWishlistViewCount(id: string): Promise<void>;
+  getWishlistItemsBySharedWishlist(wishlistId: string): Promise<WishlistItem[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -225,6 +244,90 @@ export class DatabaseStorage implements IStorage {
       .delete(wishlistItems)
       .where(eq(wishlistItems.id, id));
     return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  // Recipient Profiles
+  async getRecipientProfilesByUser(userId: string): Promise<RecipientProfile[]> {
+    return await db
+      .select()
+      .from(recipientProfiles)
+      .where(eq(recipientProfiles.userId, userId))
+      .orderBy(desc(recipientProfiles.updatedAt));
+  }
+
+  async getRecipientProfileById(id: string): Promise<RecipientProfile | undefined> {
+    const [profile] = await db
+      .select()
+      .from(recipientProfiles)
+      .where(eq(recipientProfiles.id, id));
+    return profile;
+  }
+
+  async createRecipientProfile(insertProfile: InsertRecipientProfile): Promise<RecipientProfile> {
+    const [profile] = await db
+      .insert(recipientProfiles)
+      .values(insertProfile)
+      .returning();
+    return profile;
+  }
+
+  async updateRecipientProfile(id: string, updates: Partial<RecipientProfile>): Promise<RecipientProfile | undefined> {
+    const [updated] = await db
+      .update(recipientProfiles)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(recipientProfiles.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteRecipientProfile(id: string): Promise<boolean> {
+    const result = await db
+      .delete(recipientProfiles)
+      .where(eq(recipientProfiles.id, id));
+    return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  // Shared Wishlists
+  async createSharedWishlist(data: InsertSharedWishlist): Promise<SharedWishlist> {
+    const [wishlist] = await db
+      .insert(sharedWishlists)
+      .values(data)
+      .returning();
+    return wishlist;
+  }
+
+  async getSharedWishlistByToken(token: string): Promise<SharedWishlist | undefined> {
+    const [wishlist] = await db
+      .select()
+      .from(sharedWishlists)
+      .where(eq(sharedWishlists.shareToken, token));
+    return wishlist;
+  }
+
+  async incrementWishlistViewCount(id: string): Promise<void> {
+    await db
+      .update(sharedWishlists)
+      .set({ viewCount: sql`${sharedWishlists.viewCount} + 1` })
+      .where(eq(sharedWishlists.id, id));
+  }
+
+  async getWishlistItemsBySharedWishlist(wishlistId: string): Promise<WishlistItem[]> {
+    const wishlist = await db
+      .select()
+      .from(sharedWishlists)
+      .where(eq(sharedWishlists.id, wishlistId));
+    
+    if (!wishlist[0]) return [];
+    
+    const { userId, sessionId } = wishlist[0];
+    
+    if (userId) {
+      return this.getWishlistByUser(userId);
+    } else if (sessionId) {
+      return this.getWishlistBySession(sessionId);
+    }
+    
+    return [];
   }
 }
 
