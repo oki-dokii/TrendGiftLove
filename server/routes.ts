@@ -249,6 +249,12 @@ Extract information from the user's message, update the conversation state, and 
         for (const rec of aiResult.recommendations.slice(0, 6)) {
           const product = await storage.getGiftById(rec.productId);
           if (product) {
+            // Generate Amazon search URL if not available
+            const amazonUrl = product.amazonUrl || 
+              `https://www.amazon.in/s?k=${encodeURIComponent(product.name)}`;
+            const flipkartUrl = product.flipkartUrl || 
+              `https://www.flipkart.com/search?q=${encodeURIComponent(product.name)}`;
+            
             amazonRecommendations.push({
               amazonProduct: {
                 asin: product.id,
@@ -256,7 +262,7 @@ Extract information from the user's message, update the conversation state, and 
                 price: product.priceMin > 0 ? `₹${product.priceMin}` : "Price not available",
                 currency: "INR",
                 numRatings: 0,
-                url: product.amazonUrl || "#",
+                url: amazonUrl,
                 imageUrl: product.imageUrl || "",
                 isPrime: false,
                 isBestSeller: false,
@@ -437,6 +443,10 @@ Extract information from the user's message, update the conversation state, and 
         for (const rec of aiResult.recommendations.slice(0, 6)) {
           const product = await storage.getGiftById(rec.productId);
           if (product && !existingProductIds.has(product.id)) {
+            // Generate Amazon search URL if not available
+            const amazonUrl = product.amazonUrl || 
+              `https://www.amazon.in/s?k=${encodeURIComponent(product.name)}`;
+            
             amazonRecommendations.push({
               amazonProduct: {
                 asin: product.id,
@@ -444,7 +454,7 @@ Extract information from the user's message, update the conversation state, and 
                 price: product.priceMin > 0 ? `₹${product.priceMin}` : "Price not available",
                 currency: "INR",
                 numRatings: 0,
-                url: product.amazonUrl || product.flipkartUrl || "#",
+                url: amazonUrl,
                 imageUrl: product.imageUrl || "",
                 isPrime: false,
                 isBestSeller: false,

@@ -87,14 +87,18 @@ export default function Results() {
       ? `Matches interests: ${matchingInterests.join(", ")}`
       : "AI suggests this matches your interests";
 
-    // Budget Match
-    const productPrice = rec.product.priceMin;
-    let budgetMatches = true;
+    // Budget Match - handle missing price data as mismatch
+    const productPrice = rec.product.priceMin || 0;
+    const hasValidPrice = rec.product.priceMin > 0;
+    let budgetMatches = false;
     let budgetDescription = "";
 
-    const priceDisplay = rec.product.amazonPrice || `₹${productPrice.toLocaleString()}`;
+    const priceDisplay = rec.product.amazonPrice || (hasValidPrice ? `₹${productPrice.toLocaleString()}` : "Price not available");
     
-    if (formCriteria.budget.includes("Under ₹500")) {
+    if (!hasValidPrice) {
+      budgetMatches = false;
+      budgetDescription = "Price information not available";
+    } else if (formCriteria.budget.includes("Under ₹500")) {
       budgetMatches = productPrice <= 500;
       budgetDescription = budgetMatches 
         ? `${priceDisplay} fits your budget (Under ₹500)`
@@ -120,16 +124,19 @@ export default function Results() {
         ? `${priceDisplay} fits your premium budget`
         : `${priceDisplay} is below your budget range`;
     } else {
-      budgetDescription = `${priceDisplay} within reasonable range`;
+      budgetMatches = hasValidPrice;
+      budgetDescription = hasValidPrice ? `${priceDisplay} within reasonable range` : "Price information not available";
     }
 
-    // Occasion Match
+    // Occasion Match - handle missing occasion data as mismatch
     const productOccasions = rec.product.occasions || [];
-    const occasionMatches = productOccasions.some(occ =>
-      occ.toLowerCase().includes(formCriteria.occasion.toLowerCase())
-    ) || formCriteria.occasion === "Just Because";
+    const hasOccasionData = productOccasions.length > 0;
+    const occasionMatches = hasOccasionData 
+      ? productOccasions.some(occ => occ.toLowerCase().includes(formCriteria.occasion.toLowerCase()))
+      : formCriteria.occasion === "Just Because";
     
     // Create unique occasion descriptions based on the occasion and product
+    // Use product ID as seed for deterministic selection
     const occasionDescriptions: Record<string, string[]> = {
       birthday: [
         "Perfect for making their birthday special and memorable",
@@ -160,10 +167,14 @@ export default function Results() {
     
     const occasionKey = formCriteria.occasion.toLowerCase();
     const descriptions = occasionDescriptions[occasionKey] || occasionDescriptions["just because"];
-    const randomDescription = descriptions[Math.floor(Math.random() * descriptions.length)];
+    
+    // Use product ID hash as deterministic seed
+    const productIdHash = rec.product.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const descriptionIndex = productIdHash % descriptions.length;
+    const selectedDescription = descriptions[descriptionIndex];
     
     const occasionDescription = occasionMatches
-      ? randomDescription
+      ? selectedDescription
       : `Versatile gift that works for ${formCriteria.occasion} too`;
 
     return {
@@ -211,14 +222,29 @@ export default function Results() {
       
       const requestData = JSON.parse(storedRequest);
       const response = await apiRequest("POST", `/api/recommendations/${sessionId}/more`, requestData);
-      return await response.json();
+      
+      // Read response once
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to load more recommendations");
+      }
+      
+      return data;
     },
-    onSuccess: () => {
-      toast({
-        title: "More Ideas Added",
-        description: "We've found more gift recommendations for you!",
-      });
-      queryClient.invalidateQueries({ queryKey: [`/api/recommendations/${sessionId}`] });
+    onSuccess: (data) => {
+      if (data.recommendations && data.recommendations.length > 0) {
+        toast({
+          title: "More Ideas Added",
+          description: "We've found more gift recommendations for you!",
+        });
+        queryClient.invalidateQueries({ queryKey: [`/api/recommendations/${sessionId}`] });
+      } else {
+        toast({
+          title: "That's All for Now",
+          description: "We've shown you all the suitable gifts we could find.",
+        });
+      }
     },
     onError: (error: any) => {
       toast({
@@ -496,15 +522,28 @@ export default function Results() {
                       </CardContent>
 
                       <CardFooter className="flex flex-col gap-2">
-                        {rec.product.amazonUrl && (
+                        {(rec.product.amazonUrl && rec.product.amazonUrl !== "#") && (
                           <Button
                             variant="outline"
                             className="w-full gap-2 group-hover:bg-primary group-hover:text-primary-foreground transition-colors"
                             asChild
                             data-testid={`button-buy-${rec.id}`}
                           >
-                            <a href={rec.product.amazonUrl ?? undefined} target="_blank" rel="noopener noreferrer">
-                              View Product
+                            <a href={rec.product.amazonUrl} target="_blank" rel="noopener noreferrer">
+                              Buy on Amazon
+                              <ExternalLink className="w-4 h-4" />
+                            </a>
+                          </Button>
+                        )}
+                        {(rec.product.flipkartUrl && rec.product.flipkartUrl !== "#") && !rec.product.amazonUrl && (
+                          <Button
+                            variant="outline"
+                            className="w-full gap-2 group-hover:bg-primary group-hover:text-primary-foreground transition-colors"
+                            asChild
+                            data-testid={`button-buy-flipkart-${rec.id}`}
+                          >
+                            <a href={rec.product.flipkartUrl} target="_blank" rel="noopener noreferrer">
+                              Buy on Flipkart
                               <ExternalLink className="w-4 h-4" />
                             </a>
                           </Button>

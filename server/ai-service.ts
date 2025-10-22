@@ -219,10 +219,21 @@ async function generateRuleBasedProductSuggestions(
       );
       
       if (newProducts.length > 0) {
+        const product = newProducts[0];
+        // Generate unique reasoning based on product and recipient profile
+        const reasoningTemplates = [
+          `Perfect for ${request.relationship === 'romantic partner' ? 'your partner' : `a ${request.relationship}`} who loves ${request.interests[0] || 'exploring new things'}. ${product.title.split(' ').slice(0, 3).join(' ')} makes an excellent ${request.occasion} gift.`,
+          `This ${product.title.toLowerCase().includes('premium') || product.title.toLowerCase().includes('luxury') ? 'premium' : 'thoughtful'} choice aligns perfectly with their ${request.interests.slice(0, 2).join(' and ')} interests${request.personality ? `, especially for someone with a ${request.personality.toLowerCase()} personality` : ''}.`,
+          `Ideal for someone passionate about ${request.interests[Math.floor(Math.random() * request.interests.length)] || 'quality gifts'}. ${product.isPrime ? 'Fast delivery with Prime ensures it arrives in time.' : 'A well-rated choice that shows you care.'}`,
+          `A standout gift that combines practicality with thoughtfulness for ${request.occasion === 'Just Because' ? 'any occasion' : request.occasion.toLowerCase()}. Perfect match for their ${request.interests.join(', ')} lifestyle.`,
+        ];
+        
+        const reasoningIndex = (product.title.charCodeAt(0) + i) % reasoningTemplates.length;
+        
         recommendations.push({
-          amazonProduct: newProducts[0],
-          aiReasoning: `Great gift for someone interested in ${request.interests.join(", ")}`,
-          relevanceScore: 70,
+          amazonProduct: product,
+          aiReasoning: reasoningTemplates[reasoningIndex],
+          relevanceScore: 70 + (product.isPrime ? 5 : 0) + (product.isBestSeller ? 5 : 0),
         });
       }
     } catch (error) {
