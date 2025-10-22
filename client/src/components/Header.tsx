@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { Gift, LogIn, LogOut, User } from "lucide-react";
+import { Gift, LogIn, LogOut, User, TrendingUp, MessageSquare } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
 import { useAuth } from "@/hooks/useAuth";
 import { useLocation } from "wouter";
@@ -45,7 +45,27 @@ export default function Header() {
           <span className="text-xl font-bold text-foreground" data-testid="text-brand">GiftAI</span>
         </button>
 
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center gap-2 md:gap-4">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate("/trending")}
+            className="gap-2 hidden sm:flex hover-elevate active-elevate-2"
+            data-testid="button-trending"
+          >
+            <TrendingUp className="h-4 w-4" />
+            <span>Trending</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate("/chat")}
+            className="gap-2 hidden sm:flex hover-elevate active-elevate-2"
+            data-testid="button-chatbot"
+          >
+            <MessageSquare className="h-4 w-4" />
+            <span>Chat</span>
+          </Button>
           <ThemeToggle />
           
           {isAuthenticated && user ? (

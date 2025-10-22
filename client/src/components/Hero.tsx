@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { Sparkles } from "lucide-react";
+import { Sparkles, MessageSquare, TrendingUp } from "lucide-react";
 import { useLocation } from "wouter";
 import { motion } from "framer-motion";
 import { useState } from "react";
@@ -91,7 +91,7 @@ export default function Hero() {
           </motion.p>
 
           <motion.div 
-            className="pt-4 flex flex-col sm:flex-row gap-4 justify-center"
+            className="pt-4 flex flex-col sm:flex-row gap-4 justify-center items-center flex-wrap"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.6 }}
@@ -104,6 +104,7 @@ export default function Hero() {
                     className="h-14 px-8 text-lg font-semibold bg-gradient-to-r from-primary to-accent hover:opacity-90 transition-all duration-300 shadow-[0_0_40px_rgba(168,85,247,0.4)] hover:shadow-[0_0_60px_rgba(168,85,247,0.6)]"
                     data-testid="button-start-finding"
                   >
+                    <Sparkles className="h-5 w-5 mr-2" />
                     Start Finding Gifts
                   </Button>
                 </motion.div>
@@ -124,11 +125,24 @@ export default function Hero() {
               <Button
                 size="lg"
                 variant="outline"
-                onClick={() => setLocation("/wishlist")}
+                onClick={() => setLocation("/chat")}
                 className="h-14 px-8 text-lg font-semibold border-2 border-primary/50 hover:bg-primary/10 hover:border-primary transition-all duration-300"
-                data-testid="button-view-wishlist"
+                data-testid="button-chat-finder"
               >
-                View Wishlist
+                <MessageSquare className="h-5 w-5 mr-2" />
+                Chat with AI
+              </Button>
+            </motion.div>
+            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+              <Button
+                size="lg"
+                variant="outline"
+                onClick={() => setLocation("/trending")}
+                className="h-14 px-8 text-lg font-semibold border-2 border-accent/50 hover:bg-accent/10 hover:border-accent transition-all duration-300"
+                data-testid="button-trending-gifts"
+              >
+                <TrendingUp className="h-5 w-5 mr-2" />
+                Trending Gifts
               </Button>
             </motion.div>
           </motion.div>
