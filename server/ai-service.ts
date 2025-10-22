@@ -76,9 +76,9 @@ Generate 4-6 specific product suggestions for gifts available on Amazon India. $
 }`;
 
   try {
-    // Add timeout to prevent hanging
+    // Add timeout to prevent hanging - increased to 30 seconds for better reliability
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error("Gemini API timeout")), 15000);
+      setTimeout(() => reject(new Error("Gemini API timeout")), 30000);
     });
 
     const apiPromise = ai.models.generateContent({

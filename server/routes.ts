@@ -215,11 +215,56 @@ Extract information from the user's message, update the conversation state, and 
       const request = giftFinderRequestSchema.parse(req.body);
       
       // NEW: Use AI to generate product suggestions and search Amazon
-      const amazonRecommendations = await generateAIProductSuggestions(request);
+      let amazonRecommendations = await generateAIProductSuggestions(request);
+      
+      // If Amazon/AI fails completely, fall back to existing database products
+      if (amazonRecommendations.length === 0) {
+        console.log("Amazon API failed, falling back to database products with AI ranking");
+        
+        // Get all products from database
+        const allProducts = await storage.getAllGifts();
+        
+        // Filter by budget
+        const budgetMap: Record<string, [number, number]> = {
+          "Under ₹500": [0, 500],
+          "₹500-₹2000": [500, 2000],
+          "₹2000-₹5000": [2000, 5000],
+          "₹5000-₹10000": [5000, 10000],
+          "₹10000+": [10000, 999999],
+        };
+        const [minBudget, maxBudget] = budgetMap[request.budget] || [0, 999999];
+        const budgetFiltered = allProducts.filter(p => p.priceMin >= minBudget && p.priceMax <= maxBudget);
+        
+        // Use AI to rank database products
+        const aiResult = await generateGiftRecommendations(request, budgetFiltered.length > 0 ? budgetFiltered : allProducts);
+        
+        // Convert database recommendations to Amazon-like format for consistency
+        for (const rec of aiResult.recommendations.slice(0, 6)) {
+          const product = await storage.getGiftById(rec.productId);
+          if (product) {
+            amazonRecommendations.push({
+              amazonProduct: {
+                asin: product.id,
+                title: product.name,
+                price: `₹${product.priceMin}`,
+                currency: "INR",
+                numRatings: 0,
+                url: product.amazonUrl || "#",
+                imageUrl: product.imageUrl || "",
+                isPrime: false,
+                isBestSeller: false,
+                isAmazonChoice: false,
+              },
+              aiReasoning: rec.reasoning,
+              relevanceScore: rec.relevanceScore,
+            });
+          }
+        }
+      }
       
       if (amazonRecommendations.length === 0) {
         return res.status(404).json({ 
-          error: "No suitable gifts found on Amazon for this criteria" 
+          error: "No suitable gifts found for this criteria" 
         });
       }
       
