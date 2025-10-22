@@ -23,28 +23,28 @@ interface ConversationState {
 const QUESTIONS = [
   {
     id: "occasion",
-    question: "What's the occasion? 🎉",
+    question: "What's the occasion?",
     quickReplies: ["Birthday", "Anniversary", "Wedding", "Graduation", "Just Because", "Festival"],
   },
   {
     id: "relationship",
-    question: "What's your relationship with them? 💝",
+    question: "What's your relationship with them?",
     quickReplies: ["Friend", "Partner", "Parent", "Sibling", "Colleague", "Child"],
   },
   {
     id: "interests",
-    question: "What are their interests? (You can select multiple) 🎯",
+    question: "What are their interests? (You can select multiple)",
     quickReplies: ["Technology", "Books", "Music", "Art", "Sports", "Cooking", "Travel", "Gaming", "Fashion", "Fitness"],
     multiple: true,
   },
   {
     id: "budget",
-    question: "What's your budget? 💰",
+    question: "What's your budget?",
     quickReplies: ["Under ₹500", "₹500 - ₹2000", "₹2000 - ₹5000", "₹5000 - ₹10000", "₹10000+"],
   },
   {
     id: "personality",
-    question: "How would you describe their personality? 🌟",
+    question: "How would you describe their personality?",
     quickReplies: ["Adventurous", "Minimalist", "Traditional", "Trendy", "Practical", "Romantic"],
   },
 ];
@@ -54,7 +54,7 @@ export default function ChatFinder() {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
-      content: "Hi! I'm GiftAI 🎁 Let me help you find the perfect gift! What's the occasion?",
+      content: "Hi! I'm GiftAI. Let me help you find the perfect gift! What's the occasion?",
       timestamp: new Date().toISOString(),
     },
   ]);
@@ -141,7 +141,7 @@ export default function ChatFinder() {
     setInputValue("");
 
     await simulateTyping(
-      "Thanks for sharing that! Let me use the quick options to make this faster. 😊"
+      "Thanks for sharing that! Let me use the quick options to make this faster."
     );
   };
 
@@ -165,7 +165,7 @@ export default function ChatFinder() {
     }
 
     setIsGenerating(true);
-    await simulateTyping("Perfect! Let me find the best gifts for you... 🎁✨");
+    await simulateTyping("Perfect! Let me find the best gifts for you...");
 
     try {
       const response = await apiRequest("POST", "/api/recommendations", {
@@ -183,7 +183,7 @@ export default function ChatFinder() {
       queryClient.invalidateQueries({ queryKey: ["/api/recommendations", data.sessionId] });
       
       await simulateTyping(
-        `I found ${data.recommendations.length} amazing gift ideas for you! Let me show you... 🎉`
+        `I found ${data.recommendations.length} amazing gift ideas for you! Let me show you...`
       );
 
       setTimeout(() => {
