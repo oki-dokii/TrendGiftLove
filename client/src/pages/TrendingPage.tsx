@@ -117,11 +117,11 @@ export default function TrendingPage() {
                           ))}
                         </div>
 
-                        {gift.flipkartUrl && (
+                        {gift.amazonUrl && (
                           <Button
                             className="w-full"
                             size="sm"
-                            onClick={() => window.open(gift.flipkartUrl!, "_blank")}
+                            onClick={() => window.open(gift.amazonUrl!, "_blank")}
                             data-testid={`button-buy-${gift.id}`}
                           >
                             <ExternalLink className="h-4 w-4 mr-2" />
