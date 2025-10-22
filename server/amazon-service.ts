@@ -3,6 +3,45 @@
  * Uses Real-Time Amazon Data API from RapidAPI
  */
 
+/**
+ * Utility function to add delay between API calls
+ */
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Retry logic with exponential backoff for rate-limited requests
+ */
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 3,
+  baseDelay: number = 1000
+): Promise<T> {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      lastError = error;
+      
+      // If it's a rate limit error, wait and retry
+      if (error.message?.includes('429') || error.message?.includes('Too Many Requests')) {
+        const delayMs = baseDelay * Math.pow(2, attempt); // Exponential backoff
+        console.log(`Rate limited, retrying in ${delayMs}ms (attempt ${attempt + 1}/${maxRetries})`);
+        await delay(delayMs);
+      } else {
+        // For other errors, don't retry
+        throw error;
+      }
+    }
+  }
+  
+  // All retries exhausted
+  throw lastError || new Error('Max retries exceeded');
+}
+
 export interface AmazonProduct {
   asin: string;
   title: string;
@@ -40,7 +79,7 @@ export async function searchAmazonProducts(
     throw new Error('RAPIDAPI_KEY environment variable is not set');
   }
 
-  try {
+  return retryWithBackoff(async () => {
     const url = new URL('https://real-time-amazon-data.p.rapidapi.com/search');
     url.searchParams.append('query', query);
     url.searchParams.append('page', '1');
@@ -89,10 +128,7 @@ export async function searchAmazonProducts(
       totalProducts: data.data.total_products,
       query: data.parameters.query,
     };
-  } catch (error) {
-    console.error('Error searching Amazon products:', error);
-    throw error;
-  }
+  }, 3, 2000); // 3 retries with 2 second base delay
 }
 
 /**

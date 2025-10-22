@@ -122,8 +122,14 @@ Generate 4-6 specific product suggestions for gifts available on Amazon India. $
     // Search Amazon for each AI suggestion
     const recommendations: AIGeneratedRecommendation[] = [];
     
-    for (const suggestion of suggestions) {
+    for (let i = 0; i < suggestions.length; i++) {
+      const suggestion = suggestions[i];
       try {
+        // Add delay between API calls to avoid rate limiting (except for first call)
+        if (i > 0) {
+          await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
+        }
+        
         // Search Amazon India first for Indian pricing, fallback to US
         const searchResult = await searchAmazonProducts(suggestion.searchQuery, 3, 'IN');
         
@@ -193,8 +199,14 @@ async function generateRuleBasedProductSuggestions(
   const recommendations: AIGeneratedRecommendation[] = [];
   const uniqueQueries = Array.from(new Set(searchQueries)).slice(0, 6);
 
-  for (const query of uniqueQueries) {
+  for (let i = 0; i < uniqueQueries.length; i++) {
+    const query = uniqueQueries[i];
     try {
+      // Add delay between API calls to avoid rate limiting (except for first call)
+      if (i > 0) {
+        await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
+      }
+      
       // Search Amazon India for Indian pricing - get more results to filter from
       const searchResult = await searchAmazonProducts(query, 5, 'IN');
       
