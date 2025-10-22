@@ -117,8 +117,8 @@ Extract information from the user's message, update the conversation state, and 
             required: ["response", "extractedInfo", "missingInfo", "readyToRecommend"]
           }
         },
-        contents: userPrompt,
-      });
+        contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+      }) as any;
 
       const content = response.text;
       if (!content) {

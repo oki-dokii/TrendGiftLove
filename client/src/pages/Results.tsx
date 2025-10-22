@@ -36,8 +36,6 @@ type Recommendation = {
     isPrime?: boolean;
     isBestSeller?: boolean;
     isAmazonChoice?: boolean;
-    flipkartProductId?: string | null;
-    flipkartUrl?: string | null;
   };
 };
 
@@ -464,14 +462,14 @@ export default function Results() {
                       </CardContent>
 
                       <CardFooter className="flex flex-col gap-2">
-                        {(rec.product.amazonUrl || rec.product.flipkartUrl) && (
+                        {rec.product.amazonUrl && (
                           <Button
                             variant="outline"
                             className="w-full gap-2 group-hover:bg-primary group-hover:text-primary-foreground transition-colors"
                             asChild
                             data-testid={`button-buy-${rec.id}`}
                           >
-                            <a href={(rec.product.amazonUrl || rec.product.flipkartUrl) ?? undefined} target="_blank" rel="noopener noreferrer">
+                            <a href={rec.product.amazonUrl ?? undefined} target="_blank" rel="noopener noreferrer">
                               View Product
                               <ExternalLink className="w-4 h-4" />
                             </a>
