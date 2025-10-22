@@ -1,7 +1,7 @@
 import { motion, useMotionValue, useTransform, PanInfo } from "framer-motion";
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
-import { Info, TrendingUp, Check } from "lucide-react";
+import { Info, TrendingUp, Check, X } from "lucide-react";
 
 type SwipeState = "default" | "match-score" | "match-details";
 
@@ -173,8 +173,10 @@ export default function SwipeableCard({
                     {matchDetails.budgetMatch.description}
                   </p>
                 </div>
-                {matchDetails.budgetMatch.matches && (
-                  <Check className="w-6 h-6 text-green-500 ml-4" />
+                {matchDetails.budgetMatch.matches ? (
+                  <Check className="w-6 h-6 text-green-500 ml-4" data-testid="icon-budget-match" />
+                ) : (
+                  <X className="w-6 h-6 text-red-500 ml-4" data-testid="icon-budget-mismatch" />
                 )}
               </div>
             </motion.div>
@@ -192,8 +194,10 @@ export default function SwipeableCard({
                     {matchDetails.occasionMatch.description}
                   </p>
                 </div>
-                {matchDetails.occasionMatch.matches && (
-                  <Check className="w-6 h-6 text-green-500 ml-4" />
+                {matchDetails.occasionMatch.matches ? (
+                  <Check className="w-6 h-6 text-green-500 ml-4" data-testid="icon-occasion-match" />
+                ) : (
+                  <X className="w-6 h-6 text-red-500 ml-4" data-testid="icon-occasion-mismatch" />
                 )}
               </div>
             </motion.div>

@@ -387,9 +387,11 @@ Extract information from the user's message, update the conversation state, and 
       // Get existing recommendations to avoid duplicates
       const existingRecs = await storage.getRecommendationsBySession(sessionId);
       const excludeProductNames: string[] = [];
+      const existingProductIds = new Set<string>();
       
       for (const rec of existingRecs) {
         if (rec.productId) {
+          existingProductIds.add(rec.productId);
           const product = await storage.getGiftById(rec.productId);
           if (product?.name) {
             excludeProductNames.push(product.name);
@@ -399,13 +401,66 @@ Extract information from the user's message, update the conversation state, and 
       
       console.log(`Loading more ideas for session ${sessionId}, excluding ${excludeProductNames.length} existing products:`, excludeProductNames);
       
-      // Generate new Amazon product recommendations with exclusions
-      const amazonRecommendations = await generateAIProductSuggestions(request, excludeProductNames);
+      // Try to generate new Amazon product recommendations with exclusions
+      let amazonRecommendations = await generateAIProductSuggestions(request, excludeProductNames);
       
+      // If Amazon API fails or returns no results, fall back to database products
       if (amazonRecommendations.length === 0) {
-        return res.status(404).json({ 
-          error: "No additional gifts found on Amazon for this criteria" 
-        });
+        console.log("Amazon API failed for load more, falling back to database products");
+        
+        const allProducts = await storage.getAllGifts();
+        const budgetMap: Record<string, [number, number]> = {
+          "Under ₹500": [0, 500],
+          "₹500-₹2000": [500, 2000],
+          "₹2000-₹5000": [2000, 5000],
+          "₹5000-₹10000": [5000, 10000],
+          "₹10000+": [10000, 999999],
+        };
+        const [minBudget, maxBudget] = budgetMap[request.budget] || [0, 999999];
+        
+        const budgetFiltered = allProducts.filter(p => 
+          (p.priceMin === 0 || (p.priceMax >= minBudget && p.priceMin <= maxBudget)) &&
+          !existingProductIds.has(p.id)
+        );
+        
+        const productsToRank = budgetFiltered.length > 0 ? budgetFiltered : allProducts.filter(p => !existingProductIds.has(p.id));
+        
+        if (productsToRank.length === 0) {
+          return res.status(404).json({ 
+            error: "No more suitable gifts found" 
+          });
+        }
+        
+        const aiResult = await generateGiftRecommendations(request, productsToRank);
+        
+        // Convert to amazonRecommendations format for consistency
+        for (const rec of aiResult.recommendations.slice(0, 6)) {
+          const product = await storage.getGiftById(rec.productId);
+          if (product && !existingProductIds.has(product.id)) {
+            amazonRecommendations.push({
+              amazonProduct: {
+                asin: product.id,
+                title: product.name,
+                price: product.priceMin > 0 ? `₹${product.priceMin}` : "Price not available",
+                currency: "INR",
+                numRatings: 0,
+                url: product.amazonUrl || product.flipkartUrl || "#",
+                imageUrl: product.imageUrl || "",
+                isPrime: false,
+                isBestSeller: false,
+                isAmazonChoice: false,
+              },
+              aiReasoning: rec.reasoning,
+              relevanceScore: rec.relevanceScore,
+            });
+          }
+        }
+        
+        if (amazonRecommendations.length === 0) {
+          return res.status(404).json({ 
+            error: "No more suitable gifts found" 
+          });
+        }
       }
       
       // Store new recommendations with the same sessionId
@@ -640,117 +695,6 @@ Extract information from the user's message, update the conversation state, and 
     }
   });
 
-  // POST /api/recommendations/:sessionId/more - Generate more recommendations for existing session
-  app.post("/api/recommendations/:sessionId/more", async (req, res) => {
-    try {
-      const { sessionId } = req.params;
-      
-      // Get existing recommendations to retrieve session context
-      const existingRecs = await storage.getRecommendationsBySession(sessionId);
-      if (existingRecs.length === 0) {
-        return res.status(404).json({ error: "Session not found" });
-      }
-      
-      // Use first recommendation to get search context
-      const firstRec = existingRecs[0];
-      const request = {
-        recipientName: firstRec.recipientName || undefined,
-        recipientAge: firstRec.recipientAge || undefined,
-        relationship: firstRec.relationship || "friend",
-        interests: firstRec.interests || [],
-        personality: firstRec.personality || undefined,
-        budget: firstRec.budget || "",
-        occasion: firstRec.occasion || "",
-      };
-      
-      // Get all products from storage
-      const allProducts = await storage.getAllGifts();
-      
-      // Filter products by budget
-      const budgetMap: Record<string, { min: number; max: number }> = {
-        "Under ₹500": { min: 0, max: 500 },
-        "₹500 - ₹2000": { min: 500, max: 2000 },
-        "₹2000 - ₹5000": { min: 2000, max: 5000 },
-        "₹5000 - ₹10000": { min: 5000, max: 10000 },
-        "₹10000+": { min: 10000, max: 1000000 },
-      };
-      
-      const budgetRange = budgetMap[request.budget] || { min: 0, max: 1000000 };
-      
-      // Get already recommended product IDs to exclude them
-      const existingProductIds = new Set(existingRecs.map(r => r.productId).filter(Boolean));
-      
-      // Pre-filter products by budget and exclude already recommended
-      const filteredProducts = allProducts
-        .filter(product => 
-          product.priceMax >= budgetRange.min && 
-          product.priceMin <= budgetRange.max &&
-          !existingProductIds.has(product.id)
-        )
-        .map(product => ({
-          product,
-          score: calculateRelevanceScore(request, product)
-        }))
-        .filter(item => item.score > 30)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 30)
-        .map(item => item.product);
-      
-      if (filteredProducts.length === 0) {
-        return res.status(404).json({ 
-          error: "No more suitable gifts found for this criteria" 
-        });
-      }
-      
-      // Generate AI recommendations
-      const aiResult = await generateGiftRecommendations(request, filteredProducts);
-      
-      // Save new recommendations to same session
-      const savedRecommendations = [];
-      for (const rec of aiResult.recommendations) {
-        const product = await storage.getGiftById(rec.productId);
-        if (!product || existingProductIds.has(product.id)) {
-          continue;
-        }
-        
-        const recommendation = await storage.createRecommendation({
-          sessionId,
-          recipientName: request.recipientName || null,
-          recipientAge: request.recipientAge || null,
-          relationship: request.relationship,
-          interests: request.interests,
-          personality: request.personality || null,
-          budget: request.budget,
-          occasion: request.occasion,
-          productId: rec.productId,
-          aiReasoning: rec.reasoning,
-          personalizedMessage: null,
-          relevanceScore: rec.relevanceScore,
-        });
-        
-        savedRecommendations.push({
-          ...recommendation,
-          product,
-        });
-      }
-      
-      // If no new recommendations were generated, return 404
-      if (savedRecommendations.length === 0) {
-        return res.status(404).json({ 
-          error: "No more suitable gifts found for this criteria" 
-        });
-      }
-      
-      res.json({
-        recommendations: savedRecommendations,
-      });
-      
-    } catch (error) {
-      console.error("Error generating more recommendations:", error);
-      res.status(500).json({ error: "Failed to generate more recommendations" });
-    }
-  });
-  
   // POST /api/wishlist - Add item to wishlist (supports both authenticated users and anonymous sessions)
   app.post("/api/wishlist", async (req: any, res) => {
     try {

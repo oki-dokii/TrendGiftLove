@@ -128,9 +128,43 @@ export default function Results() {
     const occasionMatches = productOccasions.some(occ =>
       occ.toLowerCase().includes(formCriteria.occasion.toLowerCase())
     ) || formCriteria.occasion === "Just Because";
+    
+    // Create unique occasion descriptions based on the occasion and product
+    const occasionDescriptions: Record<string, string[]> = {
+      birthday: [
+        "Perfect for making their birthday special and memorable",
+        "A birthday gift that shows you truly know them",
+        "Celebrates their special day with thoughtful consideration"
+      ],
+      anniversary: [
+        "Commemorates your time together beautifully",
+        "A meaningful way to celebrate your journey",
+        "Shows appreciation for years of memories"
+      ],
+      graduation: [
+        "Celebrates this major achievement perfectly",
+        "Marks the start of their new chapter",
+        "Recognizes their hard work and success"
+      ],
+      holiday: [
+        "Brings joy to the holiday season",
+        "Perfect for spreading festive cheer",
+        "Makes the holidays even more special"
+      ],
+      "just because": [
+        "Shows you're thinking of them for no reason at all",
+        "A spontaneous gesture of appreciation",
+        "Perfect for making any day special"
+      ]
+    };
+    
+    const occasionKey = formCriteria.occasion.toLowerCase();
+    const descriptions = occasionDescriptions[occasionKey] || occasionDescriptions["just because"];
+    const randomDescription = descriptions[Math.floor(Math.random() * descriptions.length)];
+    
     const occasionDescription = occasionMatches
-      ? `A thoughtful and memorable ${formCriteria.occasion.toLowerCase()} gift`
-      : `Great gift for any occasion including ${formCriteria.occasion}`;
+      ? randomDescription
+      : `Versatile gift that works for ${formCriteria.occasion} too`;
 
     return {
       interestMatch: {
