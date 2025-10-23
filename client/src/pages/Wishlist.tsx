@@ -191,7 +191,7 @@ export default function Wishlist() {
                       {item.recommendation.product.name}
                     </CardTitle>
                     <CardDescription className="text-xl md:text-2xl font-bold text-primary !mt-2" data-testid={`text-price-${item.id}`}>
-                      {item.recommendation.product.amazonPrice || `₹${item.recommendation.product.priceMin.toLocaleString()}`}
+                      {item.recommendation.product.amazonPrice || (item.recommendation.product.priceMin ? `₹${item.recommendation.product.priceMin.toLocaleString()}` : "Price not available")}
                     </CardDescription>
                   </CardHeader>
 

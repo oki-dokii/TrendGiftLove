@@ -643,7 +643,7 @@ export default function Results() {
                           {rec.product.name}
                         </CardTitle>
                         <CardDescription className="text-2xl font-bold text-primary" data-testid={`text-price-${rec.id}`}>
-                          {rec.product.amazonPrice || `₹${rec.product.priceMin.toLocaleString()}`}
+                          {rec.product.amazonPrice || (rec.product.priceMin ? `₹${rec.product.priceMin.toLocaleString()}` : "Price not available")}
                         </CardDescription>
                       </CardHeader>
 

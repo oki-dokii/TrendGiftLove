@@ -39,6 +39,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // POST /api/chat - Conversational chat endpoint
   app.post("/api/chat", async (req, res) => {
+    let conversationState: any = { interests: [] };
+    
     try {
       const chatSchema = z.object({
         message: z.string(),
@@ -53,7 +55,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }),
       });
       
-      const { message, conversationState } = chatSchema.parse(req.body);
+      const { message, conversationState: state } = chatSchema.parse(req.body);
+      conversationState = state;
       
       // Use AI to process the message and extract/update information
       const systemPrompt = `You are GiftAI, a helpful and conversational AI assistant specialized in gift recommendations. Chat naturally like ChatGPT or Gemini - be friendly, warm, and understanding.
@@ -109,20 +112,35 @@ Respond with JSON containing:
 
 User's message: "${message}"
 
-CRITICAL INSTRUCTIONS: 
-- ANALYZE what the user has told you and USE IT - don't ask for information they've already provided
-- If they mention ANY interests/hobbies in their message, IMMEDIATELY extract them and prepare to recommend
-- Use smart defaults: If budget not mentioned, use "₹500-₹2000". If occasion not mentioned, use "Just Because". If relationship unclear, infer from context or use "friend"
-- If you have WHAT they like (interests), set readyToRecommend=true - that's the most important piece
-- Be like ChatGPT/Gemini: helpful, smart, and ready to act on the information given
-- DON'T be a form-filling bot asking endless questions
-- If the user provides interest info in this message, you should be ready to recommend NOW
+CRITICAL ANALYSIS REQUIRED: 
+Look at the CURRENT conversation state above. Has the user ALREADY told you their interest? Check conversationState.interests array.
 
-Examples of when to set readyToRecommend=true:
-- "cricket fan" → YES (interests: Cricket)
-- "loves photography" → YES (interests: Photography)  
-- "friend who cooks" → YES (interests: Cooking, relationship: friend)
-- "birthday gift for my brother" → Ask what they're interested in (missing interests)
+If conversationState.interests has ANY values OR this message mentions interests:
+- IMMEDIATELY set readyToRecommend=true
+- Extract/update the interest from this message
+- Fill in any missing fields with defaults: budget="₹500-₹2000", occasion="Just Because", relationship="friend"
+- DO NOT ask for the interest again - you already have it!
+
+EXAMPLES:
+Message: "cricket fan"
+State: {interests: []}
+→ extractedInfo: {interests: ["Cricket"], budget: "₹500-₹2000", occasion: "Just Because", relationship: "friend"}
+→ readyToRecommend: true
+→ response: "Perfect! Let me find amazing cricket gifts for them!"
+
+Message: "yes find gifts" 
+State: {interests: ["Cricket"]}
+→ extractedInfo: {} (no changes needed)
+→ readyToRecommend: true
+→ response: "Great! Searching for the best cricket gifts now!"
+
+Message: "what else do you need?"
+State: {interests: ["Photography"]}  
+→ extractedInfo: {} (no changes needed)
+→ readyToRecommend: true
+→ response: "I have everything I need! Let me find perfect photography gifts!"
+
+NEVER ask for interests if conversationState.interests already has values. Just proceed with recommendations.
 
 Return ONLY valid JSON.`;
 
@@ -182,7 +200,7 @@ Return ONLY valid JSON.`;
         readyToRecommend: result.readyToRecommend,
       });
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error in chat:", error);
       if (error instanceof z.ZodError) {
         return res.status(400).json({ 
@@ -190,9 +208,35 @@ Return ONLY valid JSON.`;
           details: error.errors 
         });
       }
+      
+      // Handle Gemini API overload gracefully
+      if (error?.status === 503 || error?.message?.includes("overloaded")) {
+        // If user mentioned interests, try to proceed anyway
+        const hasInterests = conversationState.interests && conversationState.interests.length > 0;
+        
+        if (hasInterests) {
+          return res.json({
+            response: "Got it! Let me find amazing gifts based on what you've told me!",
+            conversationState: {
+              ...conversationState,
+              budget: conversationState.budget || "₹500-₹2000",
+              occasion: conversationState.occasion || "Just Because",
+              relationship: conversationState.relationship || "friend",
+            },
+            readyToRecommend: true,
+          });
+        }
+        
+        return res.status(200).json({
+          response: "I apologize for the delay. Could you tell me what they're interested in? I'll find perfect gifts for them!",
+          conversationState,
+          readyToRecommend: false,
+        });
+      }
+      
       res.status(500).json({ 
         error: "Failed to process message",
-        response: "I'm sorry, I'm having trouble understanding. Could you please rephrase that?",
+        response: "I'm sorry, I'm having trouble processing that. Could you try again?",
       });
     }
   });
