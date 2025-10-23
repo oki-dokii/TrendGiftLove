@@ -31,28 +31,31 @@ export async function generateAIProductSuggestions(
   request: GiftFinderRequest,
   excludeProductNames: string[] = []
 ): Promise<AIGeneratedRecommendation[]> {
-  const systemPrompt = `You are an expert gift advisor with deep knowledge of personality psychology, relationships, and thoughtful gift-giving. Your task is to analyze the recipient's profile and suggest specific product ideas that would make perfect gifts.
+  const systemPrompt = `You are an expert gift advisor. Your PRIMARY goal is to understand the EXACT interests and needs the user expresses and suggest ONLY products that directly relate to those specific interests.
 
-Based on the recipient's profile, generate 6-8 specific product suggestions that can be purchased on Amazon India. For each suggestion:
-- Provide a VERY SPECIFIC search query (3-6 words) that directly relates to their interests - NOT generic categories
-- Example: If they love dancing, suggest "dance practice mat" or "salsa dance shoes" NOT just "dance equipment"
-- Example: If they love photography, suggest "camera lens filter kit" or "portable photography light" NOT just "camera accessories"
-- Write a compelling 2-3 sentence explanation of why this gift is perfect for them, emphasizing how it directly connects to their specific interests
-- Give a relevance score from 1-100 based on how well it matches their SPECIFIC interests and personality
-- Specify the product category
+CRITICAL RULES:
+1. READ THE USER'S INTERESTS CAREFULLY - If they say "cricket", recommend ONLY cricket-related products (cricket bat, cricket ball, cricket gloves, cricket helmet, cricket shoes, etc.)
+2. DO NOT map interests to broad categories - "cricket" should NOT give "sports equipment", it should give cricket-specific items
+3. DO NOT show random products from a category - be laser-focused on what they actually want
+4. If they mention a specific sport (cricket, football, tennis, etc.), ALL 6-8 suggestions MUST be for that exact sport
+5. If they mention multiple interests, distribute suggestions across those specific interests
 
-CRITICAL: Focus on the recipient's SPECIFIC interests and hobbies. If they mention a particular interest like "dancing", "photography", "cooking", etc., ALL your suggestions should be highly targeted to that interest, not generic items from that category.
+Based on the recipient's profile, generate 10-12 HIGHLY SPECIFIC product suggestions available on Amazon India (more products ensure continuous loading):
 
-Consider:
-- The recipient's SPECIFIC interests and hobbies (prioritize these above all)
-- How the product directly enables or enhances their hobby/interest
-- Their personality traits and style (secondary priority)
-- The occasion and emotional context
-- The relationship between giver and recipient
-- The budget constraints
-- Age appropriateness
+SEARCH QUERY RULES:
+- Include the EXACT interest keyword in the search query
+- Examples for CRICKET: "cricket bat leather grip", "cricket helmet with face guard", "cricket ball leather pack", "cricket gloves batting", "cricket shoes spikes", "cricket practice net", "cricket kit bag", "cricket stumps set"
+- Examples for FOOTBALL: "football nike size 5", "football shoes studs", "football goalkeeper gloves", "football training cones", "football jersey"  
+- Examples for PHOTOGRAPHY: "camera tripod dslr", "camera lens cleaning kit", "camera memory card 128gb", "camera lens filter uv"
+- Examples for COOKING: "chef knife set stainless steel", "non stick pan set", "silicone spatula set", "measuring cups spoons"
 
-Return suggestions as a JSON array ordered by relevance score (highest first). Focus on variety within their interests.`;
+For each suggestion provide:
+- searchQuery: 3-6 words with the EXACT interest keyword (e.g., "cricket batting gloves" NOT "sports gloves")
+- reasoning: Why this specific item is perfect for someone who loves [exact interest]
+- relevanceScore: 1-100 based on direct match to their stated interest
+- category: The specific interest category (e.g., "Cricket Equipment" not "Sports")
+
+Return suggestions as JSON array ordered by relevance score (highest first).`;
 
   const excludeSection = excludeProductNames.length > 0 
     ? `\n\nIMPORTANT: These products have already been suggested. Generate DIFFERENT suggestions and avoid similar products:
@@ -68,7 +71,7 @@ ${request.personality ? `Personality/Style: ${request.personality}` : ""}
 Budget: ${request.budget}
 Occasion: ${request.occasion}${excludeSection}
 
-Generate 4-6 specific product suggestions for gifts available on Amazon India. ${excludeProductNames.length > 0 ? 'Suggest NEW and DIFFERENT products than the ones listed above.' : ''} Return ONLY valid JSON in this exact format:
+Generate 10-12 HIGHLY SPECIFIC product suggestions for gifts available on Amazon India. Focus on the EXACT interests mentioned (e.g., if Cricket is mentioned, ALL suggestions should be cricket-specific products). ${excludeProductNames.length > 0 ? 'Suggest NEW and DIFFERENT products than the ones listed above.' : ''} Return ONLY valid JSON in this exact format:
 {
   "suggestions": [
     {
@@ -173,7 +176,7 @@ async function generateRuleBasedProductSuggestions(
   // Generate simple product ideas based on interests
   const searchQueries: string[] = [];
   
-  // Map interests to SPECIFIC product search queries
+  // Map interests to SPECIFIC product search queries - ALWAYS include the interest keyword
   const interestMap: Record<string, string[]> = {
     "Technology": ["wireless noise cancelling earbuds", "smart fitness watch", "fast charging power bank", "phone camera lens kit"],
     "Reading": ["kindle paperwhite waterproof", "led book reading light", "decorative metal bookends", "book lover gift set"],
@@ -185,28 +188,34 @@ async function generateRuleBasedProductSuggestions(
     "Travel": ["anti theft travel backpack", "personalized luggage tags", "memory foam travel pillow", "travel organizer bag"],
     "Fashion": ["genuine leather wallet", "polarized uv sunglasses", "stainless steel watch", "fashion jewelry gift"],
     "Sports": ["badminton racket set", "gym duffle bag waterproof", "smart fitness tracker band"],
+    "Cricket": ["cricket bat leather grip", "cricket ball leather pack", "cricket helmet face guard", "cricket gloves batting", "cricket shoes spikes", "cricket practice net", "cricket kit bag", "cricket stumps set"],
+    "Football": ["football nike size 5", "football shoes studs", "football goalkeeper gloves", "football training cones", "football jersey original"],
+    "Tennis": ["tennis racket wilson", "tennis ball pack", "tennis shoes court", "tennis bag backpack"],
+    "Badminton": ["badminton racket yonex", "badminton shuttlecock feather", "badminton shoes court", "badminton net portable"],
+    "Basketball": ["basketball spalding official", "basketball shoes nike", "basketball hoop portable", "basketball jersey"],
     "Dancing": ["dance practice mat portable", "dance shoes for women", "wireless bluetooth dance speaker", "dancewear accessories"],
-    "Photography": ["camera lens filter kit", "portable ring light tripod", "camera lens cleaning kit", "photography backdrop stand"],
+    "Photography": ["camera lens filter kit", "camera tripod dslr", "camera lens cleaning kit", "camera memory card 128gb"],
     "Writing": ["fountain pen gift set", "leather journal notebook", "creative writing book", "calligraphy pen set"],
-    "Gardening": ["indoor herb garden kit", "gardening tools set", "plant pot decorative", "organic seeds variety pack"],
+    "Gardening": ["gardening tools set", "indoor herb garden kit", "plant pot decorative", "gardening gloves"],
   };
 
-  // Generate search queries based on interests
+  // Generate search queries based on interests - get MORE queries for continuous loading
   for (const interest of request.interests) {
     const queries = interestMap[interest];
     if (queries) {
-      searchQueries.push(...queries.slice(0, 2));
+      // Take MORE queries per interest to ensure enough products
+      searchQueries.push(...queries.slice(0, 4));
     }
   }
 
   // If no matches, use generic gift ideas
   if (searchQueries.length === 0) {
-    searchQueries.push("gift set", "personalized gift", "luxury gift");
+    searchQueries.push("gift set", "personalized gift", "luxury gift", "unique gift items", "premium gift box");
   }
 
-  // Search Amazon for each query
+  // Search Amazon for each query - increased from 6 to 10 for continuous loading
   const recommendations: AIGeneratedRecommendation[] = [];
-  const uniqueQueries = Array.from(new Set(searchQueries)).slice(0, 6);
+  const uniqueQueries = Array.from(new Set(searchQueries)).slice(0, 10);
 
   for (let i = 0; i < uniqueQueries.length; i++) {
     const query = uniqueQueries[i];

@@ -56,35 +56,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { message, conversationState } = chatSchema.parse(req.body);
       
       // Use AI to process the message and extract/update information
-      const systemPrompt = `You are GiftAI, a friendly and conversational gift recommendation assistant. Your role is to help users find the perfect gift by gathering information through natural conversation.
+      const systemPrompt = `You are GiftAI, a helpful and conversational AI assistant specialized in gift recommendations. Chat naturally like ChatGPT or Gemini - be friendly, helpful, and understanding.
 
-You need to collect the following information:
-- occasion (Birthday, Anniversary, Wedding, Graduation, Festival, or Just Because)
-- relationship (Friend, Partner, Parent, Sibling, Colleague, Child, or other)
-- interests (at least one: Technology, Books, Music, Art, Sports, Cooking, Travel, Gaming, Fashion, Fitness, etc.)
-- budget (Under ₹500, ₹500-₹2000, ₹2000-₹5000, ₹5000-₹10000, ₹10000+)
-- personality (optional: Adventurous, Minimalist, Traditional, Trendy, Practical, Romantic, etc.)
-- recipientName (optional)
-- recipientAge (optional)
+CONVERSATIONAL APPROACH:
+- Have a natural, flowing conversation like a real friend helping with gift ideas
+- Make SMART INFERENCES from context - don't ask for info the user already implied
+- If someone says "birthday gift for my cricket-loving friend", you already know: occasion=birthday, relationship=friend, interests=cricket
+- Don't rigidly ask for every field - infer intelligently from context
+- Only ask clarifying questions if truly necessary for better recommendations
 
-Based on the user's message and current conversation state:
-1. Extract any new information from their message
-2. Determine what information is still missing
-3. Respond naturally and conversationally
-4. Ask for missing information in a friendly way
-5. When you have enough info (occasion, relationship, interests, budget), indicate readiness to generate recommendations
+WHEN TO RECOMMEND:
+You're ready to recommend when you have a BASIC understanding of:
+- WHO it's for (friend, partner, family, etc.) - can infer from context
+- WHAT they like (interests/hobbies) - most important!
+- Rough budget idea (can use default ₹500-₹2000 if not mentioned)
+
+You DON'T need:
+- Exact occasion (can default to "Just Because")
+- Recipient's name or age
+- Personality type
+- Every single detail
+
+SMART INFERENCE EXAMPLES:
+- "gift for cricket fan" → interests: Cricket, occasion: Just Because, relationship: friend (infer)
+- "birthday present for my girlfriend who loves photography" → occasion: Birthday, relationship: Partner, interests: Photography
+- "something for dad who cooks" → relationship: Parent, interests: Cooking, occasion: Just Because
+
+BE FLEXIBLE AND HELPFUL:
+- After 2-3 messages, if you have basic info (who + what they like), set readyToRecommend=true
+- Don't keep asking "what's your budget" repeatedly - use default if not mentioned
+- Focus on understanding their INTERESTS - that's most important for good recommendations
 
 Respond with JSON containing:
-- response: Your conversational response to the user
-- extractedInfo: Object with any newly extracted information fields
-- missingInfo: Array of field names still needed
-- readyToRecommend: boolean indicating if we have enough info to recommend gifts`;
+- response: Your natural, conversational response (like ChatGPT would respond)
+- extractedInfo: Any info you extracted (use smart inference!)
+- missingInfo: Only critical missing info (usually just interests if nothing is known)
+- readyToRecommend: true when you have basic understanding of who + what they like`;
 
       const userPrompt = `Current conversation state: ${JSON.stringify(conversationState)}
 
 User's message: "${message}"
 
-Extract information from the user's message, update the conversation state, and respond naturally. Return ONLY valid JSON.`;
+IMPORTANT: 
+- Use SMART INFERENCE - extract info even if not explicitly stated
+- If they mention interests/hobbies, that's the most important thing
+- Don't ask for budget if you already have interests - use default budget
+- If you have WHO (relationship) + WHAT (interests), set readyToRecommend=true
+- Respond naturally like a helpful friend, not a form-filling bot
+
+Return ONLY valid JSON.`;
 
       const ai = new (await import("@google/genai")).GoogleGenAI({ 
         apiKey: process.env.GEMINI_API_KEY || "" 
@@ -437,8 +457,8 @@ Extract information from the user's message, update the conversation state, and 
         
         const aiResult = await generateGiftRecommendations(request, productsToRank);
         
-        // Convert to amazonRecommendations format for consistency
-        for (const rec of aiResult.recommendations.slice(0, 6)) {
+        // Convert to amazonRecommendations format for consistency - increased to 10 for continuous loading
+        for (const rec of aiResult.recommendations.slice(0, 10)) {
           const product = await storage.getGiftById(rec.productId);
           if (product && !existingProductIds.has(product.id)) {
             // Generate Amazon search URL if not available
@@ -915,6 +935,19 @@ Return ONLY valid JSON in this format:
         });
       }
       res.status(500).json({ error: "Failed to add to wishlist" });
+    }
+  });
+  
+  // GET /api/wishlist - Fallback endpoint for anonymous users without a sessionId
+  app.get("/api/wishlist", async (req, res) => {
+    try {
+      // This endpoint is called when no sessionId is available (e.g., user hasn't generated any recommendations yet)
+      // Return empty array since there are no wishlist items without a session
+      // The frontend will automatically use /api/wishlist/:sessionId when a sessionId exists in localStorage
+      res.json([]);
+    } catch (error) {
+      console.error("Error fetching wishlist:", error);
+      res.status(500).json({ error: "Failed to fetch wishlist" });
     }
   });
   

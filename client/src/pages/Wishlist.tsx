@@ -44,9 +44,32 @@ export default function Wishlist() {
   const { isAuthenticated } = useAuth();
   const { toast } = useToast();
 
+  // For anonymous users, get the most recent sessionId from localStorage
+  const getRecentSessionId = (): string | null => {
+    if (isAuthenticated) return null;
+    
+    // Find all sessionIds in localStorage
+    const sessionIds: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith('giftai_request_')) {
+        sessionIds.push(key.replace('giftai_request_', ''));
+      }
+    }
+    
+    // Return the most recent one (or null if none exist)
+    return sessionIds.length > 0 ? sessionIds[sessionIds.length - 1] : null;
+  };
+
+  const sessionId = getRecentSessionId();
+
   // Fetch wishlist based on auth status
   const { data: wishlistItems, isLoading } = useQuery<WishlistItem[]>({
-    queryKey: isAuthenticated ? ["/api/wishlist/bucket"] : ["/api/wishlist"],
+    queryKey: isAuthenticated 
+      ? ["/api/wishlist/bucket"] 
+      : sessionId 
+        ? ["/api/wishlist", sessionId]
+        : ["/api/wishlist"],
     enabled: true,
   });
 
@@ -62,6 +85,8 @@ export default function Wishlist() {
       // Invalidate appropriate query based on auth status
       if (isAuthenticated) {
         queryClient.invalidateQueries({ queryKey: ["/api/wishlist/bucket"] });
+      } else if (sessionId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/wishlist", sessionId] });
       } else {
         queryClient.invalidateQueries({ queryKey: ["/api/wishlist"] });
       }
@@ -190,7 +215,9 @@ export default function Wishlist() {
                         </div>
                         {item.recommendation.product.amazonNumRatings && (
                           <span className="text-xs text-muted-foreground">
-                            ({item.recommendation.product.amazonNumRatings.toLocaleString()})
+                            ({typeof item.recommendation.product.amazonNumRatings === 'number' 
+                              ? item.recommendation.product.amazonNumRatings.toLocaleString() 
+                              : item.recommendation.product.amazonNumRatings})
                           </span>
                         )}
                       </div>

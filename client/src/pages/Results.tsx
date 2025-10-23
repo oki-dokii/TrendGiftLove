@@ -231,11 +231,29 @@ export default function Results() {
   const loadMoreMutation = useMutation({
     mutationFn: async () => {
       const storageKey = `giftai_request_${sessionId}`;
-      const storedRequest = localStorage.getItem(storageKey);
+      let storedRequest = localStorage.getItem(storageKey);
+      
+      // If not found, try to reconstruct from existing recommendations or form criteria
+      if (!storedRequest && (recommendations && recommendations.length > 0 || formCriteria)) {
+        // Extract interests from recommendations' products
+        const interestsFromRecs = recommendations && recommendations.length > 0
+          ? Array.from(new Set(recommendations.flatMap(r => r.product.interests || [])))
+          : [];
+        
+        const fallbackRequest = {
+          interests: formCriteria?.interests || interestsFromRecs || [],
+          budget: formCriteria?.budget || "₹500-₹2000",
+          occasion: formCriteria?.occasion || "Just Because",
+          relationship: "friend",
+        };
+        storedRequest = JSON.stringify(fallbackRequest);
+        // Store it for future use
+        localStorage.setItem(storageKey, storedRequest);
+      }
       
       if (!storedRequest) {
         console.error("localStorage key not found:", storageKey);
-        throw new Error("Please refresh the page and try again");
+        throw new Error("Unable to load more. Please refresh and try again.");
       }
       
       const requestData = JSON.parse(storedRequest);
