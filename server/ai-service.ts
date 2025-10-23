@@ -33,21 +33,26 @@ export async function generateAIProductSuggestions(
 ): Promise<AIGeneratedRecommendation[]> {
   const systemPrompt = `You are an expert gift advisor with deep knowledge of personality psychology, relationships, and thoughtful gift-giving. Your task is to analyze the recipient's profile and suggest specific product ideas that would make perfect gifts.
 
-Based on the recipient's profile, generate 4-6 specific product suggestions that can be purchased on Amazon India. For each suggestion:
-- Provide a specific search query (2-5 words) that will find the product on Amazon
-- Write a compelling 2-3 sentence explanation of why this gift is perfect for them
-- Give a relevance score from 1-100
+Based on the recipient's profile, generate 6-8 specific product suggestions that can be purchased on Amazon India. For each suggestion:
+- Provide a VERY SPECIFIC search query (3-6 words) that directly relates to their interests - NOT generic categories
+- Example: If they love dancing, suggest "dance practice mat" or "salsa dance shoes" NOT just "dance equipment"
+- Example: If they love photography, suggest "camera lens filter kit" or "portable photography light" NOT just "camera accessories"
+- Write a compelling 2-3 sentence explanation of why this gift is perfect for them, emphasizing how it directly connects to their specific interests
+- Give a relevance score from 1-100 based on how well it matches their SPECIFIC interests and personality
 - Specify the product category
 
+CRITICAL: Focus on the recipient's SPECIFIC interests and hobbies. If they mention a particular interest like "dancing", "photography", "cooking", etc., ALL your suggestions should be highly targeted to that interest, not generic items from that category.
+
 Consider:
-- The recipient's interests and hobbies
-- Their personality traits and style
+- The recipient's SPECIFIC interests and hobbies (prioritize these above all)
+- How the product directly enables or enhances their hobby/interest
+- Their personality traits and style (secondary priority)
 - The occasion and emotional context
 - The relationship between giver and recipient
 - The budget constraints
 - Age appropriateness
 
-Return suggestions as a JSON array ordered by relevance score (highest first).`;
+Return suggestions as a JSON array ordered by relevance score (highest first). Focus on variety within their interests.`;
 
   const excludeSection = excludeProductNames.length > 0 
     ? `\n\nIMPORTANT: These products have already been suggested. Generate DIFFERENT suggestions and avoid similar products:
@@ -168,18 +173,22 @@ async function generateRuleBasedProductSuggestions(
   // Generate simple product ideas based on interests
   const searchQueries: string[] = [];
   
-  // Map interests to product search queries
+  // Map interests to SPECIFIC product search queries
   const interestMap: Record<string, string[]> = {
-    "Technology": ["wireless earbuds", "smart watch", "portable charger"],
-    "Reading": ["kindle paperwhite", "book light", "bookends"],
-    "Fitness": ["yoga mat", "resistance bands", "water bottle"],
-    "Cooking": ["chef knife", "cookbook", "kitchen gadget"],
-    "Gaming": ["gaming headset", "game controller", "gaming mouse"],
-    "Music": ["bluetooth speaker", "headphones", "music streaming gift card"],
-    "Art": ["art supplies", "sketchbook", "painting set"],
-    "Travel": ["travel backpack", "luggage tags", "travel pillow"],
-    "Fashion": ["wallet", "sunglasses", "watch"],
-    "Sports": ["sports equipment", "gym bag", "fitness tracker"],
+    "Technology": ["wireless noise cancelling earbuds", "smart fitness watch", "fast charging power bank", "phone camera lens kit"],
+    "Reading": ["kindle paperwhite waterproof", "led book reading light", "decorative metal bookends", "book lover gift set"],
+    "Fitness": ["non slip yoga mat", "resistance bands workout set", "insulated gym water bottle", "foam roller massage"],
+    "Cooking": ["professional chef knife set", "indian cooking cookbook", "multi purpose kitchen gadget", "silicone baking mat"],
+    "Gaming": ["rgb gaming headset", "wireless game controller", "ergonomic gaming mouse", "gaming mouse pad large"],
+    "Music": ["portable bluetooth speaker waterproof", "over ear headphones wireless", "spotify gift card india"],
+    "Art": ["professional art supplies set", "spiral bound sketchbook", "acrylic painting set canvas", "artist brush set"],
+    "Travel": ["anti theft travel backpack", "personalized luggage tags", "memory foam travel pillow", "travel organizer bag"],
+    "Fashion": ["genuine leather wallet", "polarized uv sunglasses", "stainless steel watch", "fashion jewelry gift"],
+    "Sports": ["badminton racket set", "gym duffle bag waterproof", "smart fitness tracker band"],
+    "Dancing": ["dance practice mat portable", "dance shoes for women", "wireless bluetooth dance speaker", "dancewear accessories"],
+    "Photography": ["camera lens filter kit", "portable ring light tripod", "camera lens cleaning kit", "photography backdrop stand"],
+    "Writing": ["fountain pen gift set", "leather journal notebook", "creative writing book", "calligraphy pen set"],
+    "Gardening": ["indoor herb garden kit", "gardening tools set", "plant pot decorative", "organic seeds variety pack"],
   };
 
   // Generate search queries based on interests
