@@ -40,6 +40,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // POST /api/chat - Conversational chat endpoint
   app.post("/api/chat", async (req, res) => {
     let conversationState: any = { interests: [] };
+    let message = "";
     
     try {
       const chatSchema = z.object({
@@ -55,8 +56,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }),
       });
       
-      const { message, conversationState: state } = chatSchema.parse(req.body);
-      conversationState = state;
+      const parsed = chatSchema.parse(req.body);
+      message = parsed.message;
+      conversationState = parsed.conversationState;
       
       // Use AI to process the message and extract/update information
       const systemPrompt = `You are GiftAI, a helpful and conversational AI assistant specialized in gift recommendations. Chat naturally like ChatGPT or Gemini - be friendly, warm, and understanding.
@@ -95,16 +97,26 @@ CRITICAL RULE: CHECK EXISTING STATE BEFORE ASKING
 
 SMART INFERENCE EXAMPLES:
 - "gift for cricket fan" → interests: ["Cricket"], occasion: "Just Because", relationship: "friend" → READY TO RECOMMEND!
+- "hockey lover" → interests: ["Hockey"], occasion: "Just Because", relationship: "friend" → READY TO RECOMMEND!
 - "birthday present for my girlfriend who loves photography" → occasion: "Birthday", relationship: "Partner", interests: ["Photography"] → READY TO RECOMMEND!
 - "something for dad who cooks" → relationship: "Parent", interests: ["Cooking"], occasion: "Just Because" → READY TO RECOMMEND!
 - "my sister plays badminton" → relationship: "family", interests: ["Badminton"] → READY TO RECOMMEND!
 - "friend who's into tech and gaming" → relationship: "friend", interests: ["Technology", "Gaming"] → READY TO RECOMMEND!
+- "dance enthusiast" → interests: ["Dance"], occasion: "Just Because", relationship: "friend" → READY TO RECOMMEND!
+- "loves painting" → interests: ["Painting"], occasion: "Just Because", relationship: "friend" → READY TO RECOMMEND!
 
-CRITICAL: USE EXACT INTERESTS
-- If user says "cricket", extract "Cricket" - NOT "Sports" or "Fitness"
-- If user says "cooking", extract "Cooking" - NOT "Food" or "Kitchen"
-- If user says "photography", extract "Photography" - NOT "Art" or "Technology"
-- Always capture the SPECIFIC interest they mention, never generalize to a broader category
+CRITICAL: EXTRACT INTERESTS FROM ANY CONTEXT
+- Look for patterns: "X lover", "into X", "loves X", "interested in X", "fan of X", "enjoys X"
+- Extract the EXACT word they mention as the interest (capitalize first letter)
+- Examples:
+  * "hockey lover" → interests: ["Hockey"]
+  * "into cricket" → interests: ["Cricket"]  
+  * "loves photography" → interests: ["Photography"]
+  * "enjoys cooking" → interests: ["Cooking"]
+  * "dance enthusiast" → interests: ["Dance"]
+  * "plays guitar" → interests: ["Guitar", "Music"]
+- Don't limit to predefined keywords - extract ANY interest mentioned
+- Always capture the SPECIFIC interest word they use, never generalize
 
 BE FLEXIBLE AND HELPFUL:
 - After 1-2 messages, if you have basic info (who + what they like), set readyToRecommend=true
@@ -255,16 +267,67 @@ Return ONLY valid JSON.`;
         });
       }
       
-      // Handle Gemini API overload gracefully
-      if (error?.status === 503 || error?.message?.includes("overloaded")) {
-        // If user mentioned interests, try to proceed anyway
-        const hasInterests = conversationState.interests && conversationState.interests.length > 0;
-        
+      // Enhanced fallback: Smart pattern-based interest extraction
+      const hasExistingInterests = conversationState.interests && conversationState.interests.length > 0;
+      
+      // SMART PATTERN-BASED INTEREST EXTRACTION (extracts EXACT words/phrases)
+      const detectedInterests: string[] = [];
+      
+      // Pattern 1: "X lover/fan/enthusiast" - captures multi-word interests
+      const pattern1 = /([\w\s]+?)\s+(?:lover|fan|enthusiast|buff)/gi;
+      const matches1 = Array.from(message.matchAll(pattern1));
+      for (const match of matches1) {
+        if (match[1] && match[1].trim().length > 2) {
+          const interest = match[1].trim().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+          if (!detectedInterests.includes(interest)) {
+            detectedInterests.push(interest);
+          }
+        }
+      }
+      
+      // Pattern 2: "loves/enjoys/likes X" - captures multi-word interests
+      const pattern2 = /(?:loves|enjoys|likes|into)\s+([\w\s]+?)(?:\s+and|\s+or|\.|,|$)/gi;
+      const matches2 = Array.from(message.matchAll(pattern2));
+      for (const match of matches2) {
+        if (match[1] && match[1].trim().length > 2) {
+          const interest = match[1].trim().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+          if (!detectedInterests.includes(interest)) {
+            detectedInterests.push(interest);
+          }
+        }
+      }
+      
+      // Pattern 3: "plays X" - for instruments/sports
+      const pattern3 = /plays\s+([\w\s]+?)(?:\s+and|\s+or|\.|,|$)/gi;
+      const matches3 = Array.from(message.matchAll(pattern3));
+      for (const match of matches3) {
+        if (match[1] && match[1].trim().length > 2) {
+          const interest = match[1].trim().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+          if (!detectedInterests.includes(interest)) {
+            detectedInterests.push(interest);
+          }
+        }
+      }
+      
+      // Merge with existing interests
+      const allInterests = Array.from(new Set([...conversationState.interests, ...detectedInterests]));
+      const hasInterests = hasExistingInterests || detectedInterests.length > 0;
+      
+      // Check if user wants to proceed (common proceed keywords)
+      const proceedKeywords = ['yes', 'sure', 'ok', 'okay', 'go ahead', 'find', 'search', 'show', 'get', 'recommend', 'suggest'];
+      const wantsToProceed = proceedKeywords.some(keyword => messageLower.includes(keyword));
+      
+      // Handle Gemini API errors gracefully with smart fallback
+      if (error?.status === 503 || error?.message?.includes("overloaded") || error?.message?.includes("RESOURCE_EXHAUSTED")) {
         if (hasInterests) {
+          // We have interests (existing or newly detected) - proceed with recommendations
           return res.json({
-            response: "Got it! Let me find amazing gifts based on what you've told me!",
+            response: detectedInterests.length > 0 
+              ? `Perfect! I found ${detectedInterests.join(", ")} in your message. Let me find amazing gifts for you!`
+              : "Got it! Let me find amazing gifts based on what you've told me!",
             conversationState: {
               ...conversationState,
+              interests: allInterests,
               budget: conversationState.budget || "₹500-₹2000",
               occasion: conversationState.occasion || "Just Because",
               relationship: conversationState.relationship || "friend",
@@ -273,16 +336,34 @@ Return ONLY valid JSON.`;
           });
         }
         
+        // No interests detected - ask for them
         return res.status(200).json({
-          response: "I apologize for the delay. Could you tell me what they're interested in? I'll find perfect gifts for them!",
+          response: "I apologize for the delay. Could you tell me what they're interested in? For example: cricket, photography, cooking, gaming, etc. I'll find perfect gifts for them!",
           conversationState,
           readyToRecommend: false,
         });
       }
       
+      // General error handling - still try to detect interests
+      if (hasInterests && wantsToProceed) {
+        return res.json({
+          response: detectedInterests.length > 0 
+            ? `I understand! I detected interests in ${detectedInterests.join(", ")}. Let me find gifts for you!`
+            : "Got it! Let me find gifts based on what you've shared!",
+          conversationState: {
+            ...conversationState,
+            interests: allInterests,
+            budget: conversationState.budget || "₹500-₹2000",
+            occasion: conversationState.occasion || "Just Because",
+            relationship: conversationState.relationship || "friend",
+          },
+          readyToRecommend: true,
+        });
+      }
+      
       res.status(500).json({ 
         error: "Failed to process message",
-        response: "I'm sorry, I'm having trouble processing that. Could you try again?",
+        response: "I'm sorry, I'm having trouble processing that. Could you tell me what they're interested in? (e.g., cricket, photography, cooking)",
       });
     }
   });
@@ -1347,13 +1428,31 @@ Return ONLY valid JSON in this format:
       
       const { limit } = limitSchema.parse(req.query);
       
-      // Get all gifts and sort by popularity (based on wishlist saves)
+      // Get all gifts
       const allGifts = await storage.getAllGifts();
       
-      // For now, return random selection of gifts as "trending"
-      // In production, you'd track actual save counts
-      const shuffled = allGifts.sort(() => Math.random() - 0.5);
-      const trending = shuffled.slice(0, limit);
+      // Separate Diwali products and other products
+      const diwaliGifts = allGifts.filter(gift => 
+        gift.occasions.includes("Diwali") || 
+        gift.tags?.some(tag => tag.toLowerCase().includes("diwali"))
+      );
+      const otherGifts = allGifts.filter(gift => 
+        !gift.occasions.includes("Diwali") && 
+        !gift.tags?.some(tag => tag.toLowerCase().includes("diwali"))
+      );
+      
+      // Shuffle both arrays for variety
+      const shuffledDiwali = diwaliGifts.sort(() => Math.random() - 0.5);
+      const shuffledOthers = otherGifts.sort(() => Math.random() - 0.5);
+      
+      // Combine: Show all Diwali products first, then fill remaining with other trending products
+      const diwaliCount = Math.min(shuffledDiwali.length, Math.ceil(limit * 0.5)); // At least 50% Diwali if available
+      const otherCount = limit - diwaliCount;
+      
+      const trending = [
+        ...shuffledDiwali.slice(0, diwaliCount),
+        ...shuffledOthers.slice(0, otherCount)
+      ];
       
       res.json(trending);
     } catch (error) {

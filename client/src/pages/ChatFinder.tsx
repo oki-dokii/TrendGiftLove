@@ -70,45 +70,48 @@ export default function ChatFinder() {
         return;
       }
 
-      // CLIENT-SIDE INTEREST DETECTION: Skip API call entirely when we can detect interests directly
-      const lowerMessage = userInput.toLowerCase();
-      const interestKeywords = {
-        'cricket': 'Cricket',
-        'badminton': 'Badminton',
-        'football': 'Football',
-        'tennis': 'Tennis',
-        'basketball': 'Basketball',
-        'photography': 'Photography',
-        'cooking': 'Cooking',
-        'gaming': 'Gaming',
-        'reading': 'Reading',
-        'music': 'Music',
-        'art': 'Art',
-        'painting': 'Painting',
-        'drawing': 'Drawing',
-        'writing': 'Writing',
-        'gardening': 'Gardening',
-        'fitness': 'Fitness',
-        'yoga': 'Yoga',
-        'dancing': 'Dancing',
-        'technology': 'Technology',
-        'tech': 'Technology',
-        'travel': 'Travel',
-        'sports': 'Sports',
-      };
-
+      // SMART PATTERN-BASED INTEREST DETECTION (extracts EXACT words, not generic categories)
       let detectedInterests: string[] = [];
-      for (const [keyword, interest] of Object.entries(interestKeywords)) {
-        if (lowerMessage.includes(keyword)) {
+      
+      // Pattern 1: "X lover/fan/enthusiast" - captures multi-word interests
+      const pattern1 = /([\w\s]+?)\s+(?:lover|fan|enthusiast|buff)/gi;
+      const matches1 = Array.from(userInput.matchAll(pattern1));
+      for (const match of matches1) {
+        if (match[1] && match[1].trim().length > 2) {
+          const interest = match[1].trim().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
           if (!detectedInterests.includes(interest)) {
             detectedInterests.push(interest);
           }
         }
       }
-
-      // BYPASS AI COMPLETELY if we detected interests
+      
+      // Pattern 2: "loves/enjoys/likes X" - captures multi-word interests
+      const pattern2 = /(?:loves|enjoys|likes|into)\s+([\w\s]+?)(?:\s+and|\s+or|\.|,|$)/gi;
+      const matches2 = Array.from(userInput.matchAll(pattern2));
+      for (const match of matches2) {
+        if (match[1] && match[1].trim().length > 2) {
+          const interest = match[1].trim().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+          if (!detectedInterests.includes(interest)) {
+            detectedInterests.push(interest);
+          }
+        }
+      }
+      
+      // Pattern 3: "plays X" - for instruments/sports
+      const pattern3 = /plays\s+([\w\s]+?)(?:\s+and|\s+or|\.|,|$)/gi;
+      const matches3 = Array.from(userInput.matchAll(pattern3));
+      for (const match of matches3) {
+        if (match[1] && match[1].trim().length > 2) {
+          const interest = match[1].trim().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+          if (!detectedInterests.includes(interest)) {
+            detectedInterests.push(interest);
+          }
+        }
+      }
+      
+      // If we detected interests from patterns, proceed immediately
       if (detectedInterests.length > 0 && conversationState.interests.length === 0) {
-        console.log('Client-side detected interests, bypassing AI:', detectedInterests);
+        console.log('Pattern-based detected interests (EXACT):', detectedInterests);
         
         const updatedState = {
           ...conversationState,
@@ -122,10 +125,8 @@ export default function ChatFinder() {
         setReadyToRecommend(true);
         setIsTyping(false);
         
-        // Show enthusiastic response
-        addMessage("assistant", `Perfect! I can see they love ${detectedInterests.join(' and ')}! Let me find amazing gifts for them! 🎁`);
+        addMessage("assistant", `Awesome! I can see they're interested in ${detectedInterests.join(' and ')}! Let me find the perfect gifts! 🎁`);
         
-        // Immediately proceed to recommendations
         await new Promise((resolve) => setTimeout(resolve, 500));
         await generateRecommendations();
         return;
@@ -152,6 +153,9 @@ export default function ChatFinder() {
           : conversationState.interests,
       };
       
+      console.log('Updated conversation state:', updatedState);
+      console.log('Ready to recommend:', data.readyToRecommend);
+      
       setConversationState(updatedState);
       setReadyToRecommend(data.readyToRecommend);
       
@@ -159,8 +163,9 @@ export default function ChatFinder() {
       addMessage("assistant", data.response);
 
       // If ready to recommend, automatically generate recommendations
-      if (data.readyToRecommend) {
+      if (data.readyToRecommend && updatedState.interests.length > 0) {
         await new Promise((resolve) => setTimeout(resolve, 500));
+        setIsTyping(true);
         await generateRecommendations();
       }
       
@@ -177,18 +182,23 @@ export default function ChatFinder() {
   };
 
   const generateRecommendations = async () => {
+    console.log('generateRecommendations called with state:', conversationState);
+    
     // Check for essential info (interests only - everything else can have defaults)
-    if (conversationState.interests.length === 0) {
+    if (!conversationState.interests || conversationState.interests.length === 0) {
+      console.log('No interests found, showing error');
       toast({
         title: "Add Interests",
         description: "Please tell me at least one thing they're interested in.",
         variant: "destructive",
       });
       setIsTyping(false);
+      setReadyToRecommend(false);
       addMessage("assistant", "What are they interested in? This will help me find the perfect gift!");
       return;
     }
 
+    console.log('Generating recommendations with interests:', conversationState.interests);
     setIsGenerating(true);
     setIsTyping(false);
     addMessage("assistant", "Perfect! Let me search Amazon for the best gifts based on what they love... 🎁✨");

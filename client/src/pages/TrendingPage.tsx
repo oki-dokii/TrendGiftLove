@@ -117,17 +117,18 @@ export default function TrendingPage() {
                           ))}
                         </div>
 
-                        {gift.amazonUrl && (
-                          <Button
-                            className="w-full"
-                            size="sm"
-                            onClick={() => window.open(gift.amazonUrl!, "_blank")}
-                            data-testid={`button-buy-${gift.id}`}
-                          >
-                            <ExternalLink className="h-4 w-4 mr-2" />
-                            Buy Now
-                          </Button>
-                        )}
+                        <Button
+                          className="w-full"
+                          size="sm"
+                          onClick={() => {
+                            const url = gift.amazonUrl || `https://www.amazon.in/s?k=${encodeURIComponent(gift.name)}`;
+                            window.open(url, "_blank");
+                          }}
+                          data-testid={`button-buy-${gift.id}`}
+                        >
+                          <ExternalLink className="h-4 w-4 mr-2" />
+                          Buy Now
+                        </Button>
                       </CardContent>
                     </Card>
                   ))}
