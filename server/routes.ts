@@ -61,6 +61,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Use AI to process the message and extract/update information
       const systemPrompt = `You are GiftAI, a helpful and conversational AI assistant specialized in gift recommendations. Chat naturally like ChatGPT or Gemini - be friendly, warm, and understanding.
 
+CORE PRINCIPLE: ANALYZE CONVERSATION STATE FIRST
+Before responding, CHECK what information you ALREADY HAVE in the conversation state. NEVER ask for information that's already been provided!
+
 CONVERSATIONAL APPROACH:
 - Have a natural, flowing conversation like a real friend helping with gift ideas
 - Use the EXACT words and information the user provides - don't rephrase or generalize
@@ -68,27 +71,34 @@ CONVERSATIONAL APPROACH:
 - If someone says "birthday gift for my cricket-loving friend", you already know: occasion=birthday, relationship=friend, interests=["Cricket"]
 - If they say "photography enthusiast", extract interests as ["Photography"], NOT ["Art"] or ["Technology"]
 - Don't rigidly ask for every field - infer intelligently from context
-- Only ask clarifying questions if truly necessary for better recommendations
+- Only ask clarifying questions if truly necessary for better recommendations AND you don't already have the info
 - Be conversational and empathetic - acknowledge what they've shared
 
-WHEN TO RECOMMEND:
+WHEN TO RECOMMEND (BE EAGER TO RECOMMEND):
 You're ready to recommend when you have a BASIC understanding of:
-- WHO it's for (friend, partner, family, etc.) - can infer from context
-- WHAT they like (specific interests/hobbies) - most important!
-- Rough budget idea (can use default ₹500-₹2000 if not mentioned)
+- WHAT they like (specific interests/hobbies) - this is THE MOST CRITICAL piece!
+- If you have at least ONE interest, you can recommend (use defaults for everything else)
 
 You DON'T need:
 - Exact occasion (can default to "Just Because")
 - Recipient's name or age
 - Personality type
+- Budget (default: ₹500-₹2000)
+- Relationship (default: "friend")
 - Every single detail
 
+CRITICAL RULE: CHECK EXISTING STATE BEFORE ASKING
+- If conversationState.interests has ANY items → DO NOT ask for interests again! You already have them!
+- If conversationState.budget exists → DO NOT ask for budget!
+- If conversationState.occasion exists → DO NOT ask for occasion!
+- Simply proceed to recommendation if you have interests!
+
 SMART INFERENCE EXAMPLES:
-- "gift for cricket fan" → interests: ["Cricket"], occasion: "Just Because", relationship: "friend"
-- "birthday present for my girlfriend who loves photography" → occasion: "Birthday", relationship: "Partner", interests: ["Photography"]
-- "something for dad who cooks" → relationship: "Parent", interests: ["Cooking"], occasion: "Just Because"
-- "my sister plays badminton" → relationship: "family", interests: ["Badminton"]
-- "friend who's into tech and gaming" → relationship: "friend", interests: ["Technology", "Gaming"]
+- "gift for cricket fan" → interests: ["Cricket"], occasion: "Just Because", relationship: "friend" → READY TO RECOMMEND!
+- "birthday present for my girlfriend who loves photography" → occasion: "Birthday", relationship: "Partner", interests: ["Photography"] → READY TO RECOMMEND!
+- "something for dad who cooks" → relationship: "Parent", interests: ["Cooking"], occasion: "Just Because" → READY TO RECOMMEND!
+- "my sister plays badminton" → relationship: "family", interests: ["Badminton"] → READY TO RECOMMEND!
+- "friend who's into tech and gaming" → relationship: "friend", interests: ["Technology", "Gaming"] → READY TO RECOMMEND!
 
 CRITICAL: USE EXACT INTERESTS
 - If user says "cricket", extract "Cricket" - NOT "Sports" or "Fitness"
@@ -101,25 +111,37 @@ BE FLEXIBLE AND HELPFUL:
 - Don't keep asking "what's your budget" repeatedly - use default if not mentioned
 - Focus on understanding their SPECIFIC INTERESTS - that's most important for good recommendations
 - Be ready to recommend quickly once you have the essentials
+- If user says anything like "yes", "sure", "go ahead", "find gifts" and you already have interests → IMMEDIATELY set readyToRecommend=true
 
 Respond with JSON containing:
 - response: Your natural, conversational response (friendly, warm, like ChatGPT would respond)
-- extractedInfo: Any info you extracted (use smart inference and EXACT interest keywords!)
-- missingInfo: Only critical missing info (usually just interests if nothing is known)
-- readyToRecommend: true when you have basic understanding of who + specific interests they like`;
+- extractedInfo: Any NEW info you extracted (use smart inference and EXACT interest keywords!)
+- missingInfo: Only critical missing info (usually empty if you have at least one interest!)
+- readyToRecommend: true when you have at least ONE specific interest (even if other fields are missing)`;
 
-      const userPrompt = `Current conversation state: ${JSON.stringify(conversationState)}
+      const userPrompt = `CURRENT CONVERSATION STATE: ${JSON.stringify(conversationState)}
 
-User's message: "${message}"
+USER'S NEW MESSAGE: "${message}"
 
-CRITICAL ANALYSIS REQUIRED: 
-Look at the CURRENT conversation state above. Has the user ALREADY told you their interest? Check conversationState.interests array.
+STEP 1 - ANALYZE WHAT YOU ALREADY HAVE:
+${conversationState.interests && conversationState.interests.length > 0 
+  ? `✓ You ALREADY HAVE interests: ${conversationState.interests.join(', ')} - DO NOT ASK FOR THEM AGAIN!`
+  : '✗ You need to extract interests from the message'}
+${conversationState.budget ? `✓ You already have budget: ${conversationState.budget}` : ''}
+${conversationState.occasion ? `✓ You already have occasion: ${conversationState.occasion}` : ''}
+${conversationState.relationship ? `✓ You already have relationship: ${conversationState.relationship}` : ''}
 
-If conversationState.interests has ANY values OR this message mentions interests:
-- IMMEDIATELY set readyToRecommend=true
-- Extract/update the interest from this message
-- Fill in any missing fields with defaults: budget="₹500-₹2000", occasion="Just Because", relationship="friend"
-- DO NOT ask for the interest again - you already have it!
+STEP 2 - DECISION LOGIC:
+${conversationState.interests && conversationState.interests.length > 0 
+  ? `Since you ALREADY HAVE interests (${conversationState.interests.join(', ')}), you should:
+  - Set readyToRecommend=true IMMEDIATELY
+  - Fill missing fields with defaults (budget="₹500-₹2000", occasion="Just Because", relationship="friend")
+  - Respond enthusiastically that you're ready to find gifts
+  - DO NOT ask any more questions - you have everything you need!`
+  : `Since you DON'T have interests yet:
+  - Try to extract interests from this message
+  - If you find interests, set readyToRecommend=true
+  - If no interests in message, ask ONLY for their interests (nothing else)`}
 
 EXAMPLES:
 Message: "cricket fan"
@@ -130,17 +152,23 @@ State: {interests: []}
 
 Message: "yes find gifts" 
 State: {interests: ["Cricket"]}
-→ extractedInfo: {} (no changes needed)
+→ extractedInfo: {budget: "₹500-₹2000", occasion: "Just Because", relationship: "friend"} (fill defaults only)
 → readyToRecommend: true
-→ response: "Great! Searching for the best cricket gifts now!"
+→ response: "Great! Let me search for the best cricket gifts!"
 
 Message: "what else do you need?"
-State: {interests: ["Photography"]}  
-→ extractedInfo: {} (no changes needed)
+State: {interests: ["Photography"], budget: "₹500-₹2000"}  
+→ extractedInfo: {occasion: "Just Because", relationship: "friend"} (fill remaining defaults)
 → readyToRecommend: true
-→ response: "I have everything I need! Let me find perfect photography gifts!"
+→ response: "I have everything I need! Let me find perfect photography gifts for them!"
 
-NEVER ask for interests if conversationState.interests already has values. Just proceed with recommendations.
+Message: "sure, go ahead"
+State: {interests: ["Cooking"]}
+→ extractedInfo: {budget: "₹500-₹2000", occasion: "Just Because", relationship: "friend"}
+→ readyToRecommend: true
+→ response: "Awesome! Searching for amazing cooking gifts now!"
+
+REMEMBER: If interests exist in state, NEVER ask for anything - just set readyToRecommend=true!
 
 Return ONLY valid JSON.`;
 
@@ -194,10 +222,28 @@ Return ONLY valid JSON.`;
           : conversationState.interests,
       };
 
+      // SAFETY CHECK: If we have interests and user seems ready, force readyToRecommend=true
+      // This handles cases where AI doesn't follow instructions perfectly
+      let readyToRecommend = result.readyToRecommend;
+      if (updatedState.interests && updatedState.interests.length > 0) {
+        const userMessage = message.toLowerCase();
+        const proceedKeywords = ['yes', 'sure', 'ok', 'okay', 'go ahead', 'find', 'search', 'show', 'get', 'recommend'];
+        const isProceedMessage = proceedKeywords.some(keyword => userMessage.includes(keyword));
+        
+        // If user has interests and seems to want recommendations, force it
+        if (isProceedMessage || result.readyToRecommend) {
+          readyToRecommend = true;
+          // Fill in defaults for missing fields
+          if (!updatedState.budget) updatedState.budget = "₹500-₹2000";
+          if (!updatedState.occasion) updatedState.occasion = "Just Because";
+          if (!updatedState.relationship) updatedState.relationship = "friend";
+        }
+      }
+
       res.json({
         response: result.response,
         conversationState: updatedState,
-        readyToRecommend: result.readyToRecommend,
+        readyToRecommend: readyToRecommend,
       });
 
     } catch (error: any) {
@@ -1031,12 +1077,20 @@ Return ONLY valid JSON in this format:
             ? await storage.getRecommendationById(item.recommendationId)
             : null;
           
-          // Structure data to match frontend expectations
+          // Structure data to match frontend expectations with properly formatted Amazon data
           return {
             ...item,
             recommendation: recommendation ? {
               ...recommendation,
-              product: product || {}
+              product: product ? {
+                ...product,
+                // Convert string booleans to actual booleans for frontend
+                isPrime: product.isPrime === "true",
+                isBestSeller: product.isBestSeller === "true",
+                isAmazonChoice: product.isAmazonChoice === "true",
+                // Parse numeric ratings if stored as strings
+                amazonNumRatings: product.amazonNumRatings ? parseInt(product.amazonNumRatings) : null,
+              } : {}
             } : null
           };
         })
@@ -1065,12 +1119,20 @@ Return ONLY valid JSON in this format:
             ? await storage.getRecommendationById(item.recommendationId)
             : null;
           
-          // Structure data to match frontend expectations
+          // Structure data to match frontend expectations with properly formatted Amazon data
           return {
             ...item,
             recommendation: recommendation ? {
               ...recommendation,
-              product: product || {}
+              product: product ? {
+                ...product,
+                // Convert string booleans to actual booleans for frontend
+                isPrime: product.isPrime === "true",
+                isBestSeller: product.isBestSeller === "true",
+                isAmazonChoice: product.isAmazonChoice === "true",
+                // Parse numeric ratings if stored as strings
+                amazonNumRatings: product.amazonNumRatings ? parseInt(product.amazonNumRatings) : null,
+              } : {}
             } : null
           };
         })
