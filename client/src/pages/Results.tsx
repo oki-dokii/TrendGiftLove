@@ -4,13 +4,14 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Heart, ArrowLeft, Sparkles, MessageSquare, ExternalLink, Star, Package } from "lucide-react";
+import { Heart, ArrowLeft, Sparkles, MessageSquare, ExternalLink, Star, Package, Send, MessageCircle } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { motion } from "framer-motion";
 import SwipeableCard from "@/components/SwipeableCard";
+import { Input } from "@/components/ui/input";
 
 type Recommendation = {
   id: string;
@@ -39,6 +40,12 @@ type Recommendation = {
   };
 };
 
+interface ChatMessageType {
+  role: "user" | "assistant";
+  content: string;
+  timestamp: string;
+}
+
 interface FormCriteria {
   interests: string[];
   budget: string;
@@ -52,6 +59,17 @@ export default function Results() {
   const { toast } = useToast();
   const [generatingMessageFor, setGeneratingMessageFor] = useState<string | null>(null);
   const { isAuthenticated } = useAuth();
+  const [chatMessages, setChatMessages] = useState<ChatMessageType[]>([
+    {
+      role: "assistant",
+      content: "Here are your personalized gift recommendations! You can chat with me to refine these suggestions or ask for different options.",
+      timestamp: new Date().toISOString(),
+    },
+  ]);
+  const [chatInput, setChatInput] = useState("");
+  const [isChatTyping, setIsChatTyping] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Load form criteria from localStorage
   const formCriteria = useMemo<FormCriteria | null>(() => {
@@ -316,6 +334,61 @@ export default function Results() {
     addToWishlistMutation.mutate(recommendationId);
   };
 
+  const handleSendChatMessage = async () => {
+    if (!chatInput.trim() || isChatTyping || !sessionId) return;
+
+    const userMessage = chatInput.trim();
+    setChatMessages(prev => [
+      ...prev,
+      { role: "user", content: userMessage, timestamp: new Date().toISOString() },
+    ]);
+    setChatInput("");
+    setIsChatTyping(true);
+
+    try {
+      const storageKey = `giftai_request_${sessionId}`;
+      const storedRequest = localStorage.getItem(storageKey);
+      const requestData = storedRequest ? JSON.parse(storedRequest) : {};
+
+      const response = await apiRequest("POST", `/api/recommendations/${sessionId}/refine`, {
+        message: userMessage,
+        ...requestData,
+      });
+      
+      const data = await response.json();
+      
+      setIsChatTyping(false);
+      setChatMessages(prev => [
+        ...prev,
+        { role: "assistant", content: data.response, timestamp: new Date().toISOString() },
+      ]);
+
+      if (data.newRecommendations && data.newRecommendations.length > 0) {
+        toast({
+          title: "New Recommendations Added",
+          description: `Found ${data.newRecommendations.length} new gift ideas based on your request!`,
+        });
+        queryClient.invalidateQueries({ queryKey: [`/api/recommendations/${sessionId}`] });
+      }
+    } catch (error) {
+      console.error("Error sending chat message:", error);
+      setIsChatTyping(false);
+      setChatMessages(prev => [
+        ...prev,
+        { role: "assistant", content: "I'm sorry, I encountered an error. Please try again.", timestamp: new Date().toISOString() },
+      ]);
+      toast({
+        title: "Error",
+        description: "Failed to process your message. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages, isChatTyping]);
+
   if (!sessionId) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -352,6 +425,15 @@ export default function Results() {
           <div className="flex items-center gap-4">
             <Button
               variant="outline"
+              onClick={() => setShowChat(!showChat)}
+              className="gap-2"
+              data-testid="button-toggle-chat"
+            >
+              <MessageCircle className="w-4 h-4" />
+              {showChat ? "Hide Chat" : "Refine Results"}
+            </Button>
+            <Button
+              variant="outline"
               onClick={() => navigate("/wishlist")}
               className="gap-2"
             >
@@ -361,6 +443,95 @@ export default function Results() {
           </div>
         </div>
       </header>
+
+      {/* Chat Panel */}
+      {showChat && (
+        <div className="fixed right-0 top-0 h-screen w-full md:w-96 bg-background border-l border-border z-50 flex flex-col shadow-2xl">
+          <div className="p-4 border-b border-border flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-primary" />
+              <h3 className="font-semibold">Refine Your Search</h3>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowChat(false)}
+              data-testid="button-close-chat"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </Button>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {chatMessages.map((msg, index) => (
+              <div
+                key={index}
+                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+              >
+                <div
+                  className={`max-w-[85%] rounded-2xl px-4 py-3 ${
+                    msg.role === "user"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-foreground"
+                  }`}
+                >
+                  {msg.role === "assistant" && (
+                    <div className="flex items-center gap-2 mb-1">
+                      <Sparkles className="h-3 w-3" />
+                      <span className="text-xs font-semibold">GiftAI</span>
+                    </div>
+                  )}
+                  <p className="text-sm">{msg.content}</p>
+                </div>
+              </div>
+            ))}
+            {isChatTyping && (
+              <div className="flex justify-start">
+                <div className="bg-muted rounded-2xl px-4 py-3 max-w-[85%]">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Sparkles className="h-3 w-3" />
+                    <span className="text-xs font-semibold">GiftAI</span>
+                  </div>
+                  <div className="flex gap-1">
+                    <div className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <div className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <div className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </div>
+                </div>
+              </div>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+          
+          <div className="p-4 border-t border-border bg-muted/20">
+            <div className="flex gap-2">
+              <Input
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyPress={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendChatMessage();
+                  }
+                }}
+                placeholder="Ask for cheaper options, different styles..."
+                disabled={isChatTyping}
+                data-testid="input-chat-refine"
+                className="flex-1"
+              />
+              <Button
+                onClick={handleSendChatMessage}
+                disabled={!chatInput.trim() || isChatTyping}
+                size="icon"
+                data-testid="button-send-chat"
+              >
+                <Send className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-6 py-12">
@@ -531,19 +702,6 @@ export default function Results() {
                           >
                             <a href={rec.product.amazonUrl} target="_blank" rel="noopener noreferrer">
                               Buy on Amazon
-                              <ExternalLink className="w-4 h-4" />
-                            </a>
-                          </Button>
-                        )}
-                        {(rec.product.flipkartUrl && rec.product.flipkartUrl !== "#") && !rec.product.amazonUrl && (
-                          <Button
-                            variant="outline"
-                            className="w-full gap-2 group-hover:bg-primary group-hover:text-primary-foreground transition-colors"
-                            asChild
-                            data-testid={`button-buy-flipkart-${rec.id}`}
-                          >
-                            <a href={rec.product.flipkartUrl} target="_blank" rel="noopener noreferrer">
-                              Buy on Flipkart
                               <ExternalLink className="w-4 h-4" />
                             </a>
                           </Button>

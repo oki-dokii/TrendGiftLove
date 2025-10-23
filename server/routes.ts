@@ -252,8 +252,6 @@ Extract information from the user's message, update the conversation state, and 
             // Generate Amazon search URL if not available
             const amazonUrl = product.amazonUrl || 
               `https://www.amazon.in/s?k=${encodeURIComponent(product.name)}`;
-            const flipkartUrl = product.flipkartUrl || 
-              `https://www.flipkart.com/search?q=${encodeURIComponent(product.name)}`;
             
             amazonRecommendations.push({
               amazonProduct: {
@@ -641,6 +639,170 @@ Extract information from the user's message, update the conversation state, and 
     }
   });
   
+  // POST /api/recommendations/:sessionId/refine - Refine recommendations with chat
+  app.post("/api/recommendations/:sessionId/refine", async (req, res) => {
+    try {
+      const { sessionId } = req.params;
+      const refineSchema = z.object({
+        message: z.string(),
+        relationship: z.string().optional(),
+        interests: z.array(z.string()).optional(),
+        personality: z.string().optional(),
+        budget: z.string().optional(),
+        occasion: z.string().optional(),
+        recipientName: z.string().optional(),
+        recipientAge: z.number().optional(),
+      });
+      
+      const data = refineSchema.parse(req.body);
+      
+      // Get existing recommendations to avoid duplicates
+      const existingRecs = await storage.getRecommendationsBySession(sessionId);
+      const excludeProductNames: string[] = [];
+      
+      for (const rec of existingRecs) {
+        if (rec.productId) {
+          const product = await storage.getGiftById(rec.productId);
+          if (product?.name) {
+            excludeProductNames.push(product.name);
+          }
+        }
+      }
+      
+      // Use AI to understand the refinement request and generate new suggestions
+      const systemPrompt = `You are GiftAI, helping users refine their gift recommendations. Based on their message, generate 2-4 new specific product search queries that address their request.
+
+User's refinement message: "${data.message}"
+
+Analyze what they're asking for:
+- If they want cheaper: suggest lower-priced alternatives
+- If they want more expensive/premium: suggest higher-end options
+- If they want different style/category: suggest products in that direction
+- If they want more variety: suggest completely different types of products
+
+Original search context:
+${data.interests ? `Interests: ${data.interests.join(", ")}` : ""}
+${data.budget ? `Budget: ${data.budget}` : ""}
+${data.occasion ? `Occasion: ${data.occasion}` : ""}
+
+Return ONLY valid JSON in this format:
+{
+  "response": "brief acknowledgment of their request (1 sentence)",
+  "suggestions": [
+    {
+      "searchQuery": "specific product search term",
+      "reasoning": "why this addresses their request",
+      "relevanceScore": 85,
+      "category": "product category"
+    }
+  ]
+}`;
+
+      const ai = new (await import("@google/genai")).GoogleGenAI({ 
+        apiKey: process.env.GEMINI_API_KEY || "" 
+      });
+
+      const aiResponse = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        config: {
+          responseMimeType: "application/json",
+        },
+        contents: systemPrompt,
+      });
+
+      // Safely extract response text from Gemini response
+      let responseText = "";
+      if (aiResponse.text) {
+        responseText = aiResponse.text;
+      } else if (aiResponse.candidates?.[0]?.content?.parts?.[0]?.text) {
+        responseText = aiResponse.candidates[0].content.parts[0].text;
+      }
+      
+      if (!responseText) {
+        throw new Error("No response from Gemini AI");
+      }
+
+      const aiResult = JSON.parse(responseText);
+      const chatResponse = aiResult.response || "Let me find some new options for you!";
+      
+      // Search Amazon for each suggestion
+      const { searchAmazonProducts } = await import("./amazon-service");
+      const newRecommendations = [];
+      
+      for (const suggestion of (aiResult.suggestions || []).slice(0, 4)) {
+        try {
+          const searchResult = await searchAmazonProducts(suggestion.searchQuery, 2, 'IN');
+          
+          if (searchResult.products.length > 0) {
+            const topProduct = searchResult.products[0];
+            
+            // Create product and recommendation in database
+            const amazonProduct = await storage.createGiftProduct({
+              name: topProduct.title,
+              description: suggestion.reasoning,
+              category: suggestion.category || "Amazon Product",
+              priceMin: Math.round(parseFloat(topProduct.price.replace(/[^0-9.]/g, '')) || 0),
+              priceMax: Math.round(parseFloat(topProduct.price.replace(/[^0-9.]/g, '')) || 0),
+              interests: data.interests || [],
+              occasions: data.occasion ? [data.occasion] : [],
+              relationship: data.relationship ? [data.relationship] : [],
+              tags: [
+                topProduct.isPrime ? "Prime" : "",
+                topProduct.isBestSeller ? "Best Seller" : "",
+                topProduct.isAmazonChoice ? "Amazon's Choice" : "",
+              ].filter(Boolean),
+              imageUrl: topProduct.imageUrl,
+              amazonUrl: topProduct.url,
+              amazonPrice: topProduct.price,
+              amazonRating: topProduct.rating?.toString() || null,
+              amazonNumRatings: topProduct.numRatings?.toString() || null,
+              isPrime: topProduct.isPrime ? "true" : "false",
+              isBestSeller: topProduct.isBestSeller ? "true" : "false",
+              isAmazonChoice: topProduct.isAmazonChoice ? "true" : "false",
+            });
+            
+            const recommendation = await storage.createRecommendation({
+              sessionId,
+              recipientName: data.recipientName || null,
+              recipientAge: data.recipientAge || null,
+              relationship: data.relationship || "Friend",
+              interests: data.interests || [],
+              personality: data.personality || null,
+              budget: data.budget || "₹500-₹2000",
+              occasion: data.occasion || "Just Because",
+              productId: amazonProduct.id,
+              aiReasoning: suggestion.reasoning,
+              personalizedMessage: null,
+              relevanceScore: suggestion.relevanceScore || 80,
+            });
+            
+            newRecommendations.push(recommendation);
+          }
+        } catch (error) {
+          console.error(`Error processing suggestion "${suggestion.searchQuery}":`, error);
+        }
+      }
+      
+      res.json({
+        response: chatResponse,
+        newRecommendations,
+      });
+      
+    } catch (error) {
+      console.error("Error refining recommendations:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          error: "Invalid request data", 
+          details: error.errors 
+        });
+      }
+      res.status(500).json({ 
+        error: "Failed to refine recommendations",
+        response: "I'm having trouble processing that. Could you try rephrasing?",
+      });
+    }
+  });
+
   // POST /api/message - Generate personalized message for a gift (always regenerates)
   app.post("/api/message", async (req, res) => {
     try {
