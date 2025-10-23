@@ -70,6 +70,39 @@ export default function ChatFinder() {
         return;
       }
 
+      // CLIENT-SIDE SAFETY: Simple interest detection from user's message
+      // This provides instant fallback if AI fails to extract properly
+      const lowerMessage = userInput.toLowerCase();
+      const interestKeywords = {
+        'cricket': 'Cricket',
+        'badminton': 'Badminton',
+        'football': 'Football',
+        'tennis': 'Tennis',
+        'basketball': 'Basketball',
+        'photography': 'Photography',
+        'cooking': 'Cooking',
+        'gaming': 'Gaming',
+        'reading': 'Reading',
+        'music': 'Music',
+        'art': 'Art',
+        'painting': 'Painting',
+        'drawing': 'Drawing',
+        'writing': 'Writing',
+        'gardening': 'Gardening',
+        'fitness': 'Fitness',
+        'yoga': 'Yoga',
+        'dancing': 'Dancing',
+        'technology': 'Technology',
+        'tech': 'Technology',
+      };
+
+      let detectedInterests: string[] = [];
+      for (const [keyword, interest] of Object.entries(interestKeywords)) {
+        if (lowerMessage.includes(keyword)) {
+          detectedInterests.push(interest);
+        }
+      }
+
       // Otherwise, process the message conversationally
       const response = await apiRequest("POST", "/api/chat", {
         message: userInput,
@@ -82,15 +115,36 @@ export default function ChatFinder() {
       await new Promise((resolve) => setTimeout(resolve, 800));
       setIsTyping(false);
       
-      // Update conversation state
-      setConversationState(data.conversationState);
-      setReadyToRecommend(data.readyToRecommend);
+      // CLIENT-SIDE FALLBACK: If AI didn't extract interests but we detected them, add them
+      let updatedState = data.conversationState;
+      if (detectedInterests.length > 0 && (!updatedState.interests || updatedState.interests.length === 0)) {
+        console.log('Client-side fallback: detected interests', detectedInterests);
+        updatedState = {
+          ...updatedState,
+          interests: detectedInterests,
+          budget: updatedState.budget || "₹500-₹2000",
+          occasion: updatedState.occasion || "Just Because",
+          relationship: updatedState.relationship || "friend",
+        };
+      }
       
-      // Add AI response
-      addMessage("assistant", data.response);
+      // Update conversation state
+      setConversationState(updatedState);
+      
+      // CLIENT-SIDE DECISION: If we have interests now, we're ready to recommend
+      const shouldRecommend = data.readyToRecommend || (updatedState.interests && updatedState.interests.length > 0);
+      setReadyToRecommend(shouldRecommend);
+      
+      // Add AI response (or override if we're forcing recommendations)
+      if (shouldRecommend && !data.readyToRecommend && updatedState.interests.length > 0) {
+        // Override response to be more enthusiastic since we're forcing it
+        addMessage("assistant", `Perfect! I can see they love ${updatedState.interests.join(' and ')}! Let me find amazing gifts for them! 🎁`);
+      } else {
+        addMessage("assistant", data.response);
+      }
 
       // If ready to recommend, automatically generate recommendations
-      if (data.readyToRecommend) {
+      if (shouldRecommend) {
         await new Promise((resolve) => setTimeout(resolve, 500));
         await generateRecommendations();
       }
