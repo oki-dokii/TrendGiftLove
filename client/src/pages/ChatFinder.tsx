@@ -115,10 +115,13 @@ export default function ChatFinder() {
       await new Promise((resolve) => setTimeout(resolve, 800));
       setIsTyping(false);
       
-      // CLIENT-SIDE FALLBACK: If AI didn't extract interests but we detected them, add them
+      // CLIENT-SIDE FALLBACK: If we detected interests, use them immediately
       let updatedState = data.conversationState;
-      if (detectedInterests.length > 0 && (!updatedState.interests || updatedState.interests.length === 0)) {
-        console.log('Client-side fallback: detected interests', detectedInterests);
+      let clientOverride = false;
+      
+      if (detectedInterests.length > 0) {
+        console.log('Client-side detected interests:', detectedInterests);
+        // ALWAYS use detected interests, even if AI extracted some
         updatedState = {
           ...updatedState,
           interests: detectedInterests,
@@ -126,27 +129,30 @@ export default function ChatFinder() {
           occasion: updatedState.occasion || "Just Because",
           relationship: updatedState.relationship || "friend",
         };
+        clientOverride = true;
       }
       
       // Update conversation state
       setConversationState(updatedState);
       
       // CLIENT-SIDE DECISION: If we have interests now, we're ready to recommend
-      const shouldRecommend = data.readyToRecommend || (updatedState.interests && updatedState.interests.length > 0);
+      const hasInterests = updatedState.interests && updatedState.interests.length > 0;
+      const shouldRecommend = data.readyToRecommend || hasInterests;
       setReadyToRecommend(shouldRecommend);
       
-      // Add AI response (or override if we're forcing recommendations)
-      if (shouldRecommend && !data.readyToRecommend && updatedState.interests.length > 0) {
-        // Override response to be more enthusiastic since we're forcing it
+      // If we detected interests client-side, skip AI's confusing response and proceed directly
+      if (clientOverride && hasInterests) {
         addMessage("assistant", `Perfect! I can see they love ${updatedState.interests.join(' and ')}! Let me find amazing gifts for them! 🎁`);
-      } else {
-        addMessage("assistant", data.response);
-      }
-
-      // If ready to recommend, automatically generate recommendations
-      if (shouldRecommend) {
         await new Promise((resolve) => setTimeout(resolve, 500));
         await generateRecommendations();
+      } else if (shouldRecommend && hasInterests) {
+        // AI detected interests - use AI response but still proceed
+        addMessage("assistant", data.response);
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        await generateRecommendations();
+      } else {
+        // No interests yet - show AI response normally
+        addMessage("assistant", data.response);
       }
       
     } catch (error) {
