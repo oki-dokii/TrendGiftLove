@@ -298,18 +298,20 @@ export default function Results() {
         : { sessionId, recommendationId };
       return await apiRequest("POST", "/api/wishlist", payload);
     },
-    onSuccess: (_, recommendationId) => {
+    onSuccess: async (_, recommendationId) => {
       toast({
         title: isAuthenticated ? "Added to Bucket List" : "Added to Wishlist",
         description: isAuthenticated 
           ? "Gift saved to your bucket list and will persist across sessions!" 
           : "Gift saved to your wishlist successfully!",
       });
-      // Invalidate both queries to update wishlist state
+      // Invalidate and refetch immediately to update wishlist state
       if (isAuthenticated) {
-        queryClient.invalidateQueries({ queryKey: ["/api/wishlist/bucket"] });
+        await queryClient.invalidateQueries({ queryKey: ["/api/wishlist/bucket"] });
+        await queryClient.refetchQueries({ queryKey: ["/api/wishlist/bucket"] });
       } else {
-        queryClient.invalidateQueries({ queryKey: ["/api/wishlist", sessionId] });
+        await queryClient.invalidateQueries({ queryKey: ["/api/wishlist", sessionId] });
+        await queryClient.refetchQueries({ queryKey: ["/api/wishlist", sessionId] });
       }
     },
     onError: () => {
@@ -323,15 +325,44 @@ export default function Results() {
 
   const generateMessageMutation = useMutation({
     mutationFn: async (recommendationId: string) => {
-      return await apiRequest("POST", "/api/message", { recommendationId });
+      const response = await apiRequest("POST", "/api/message", { recommendationId });
+      if (!response.ok) {
+        throw new Error("Failed to generate message");
+      }
+      return await response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data, recommendationId) => {
       setGeneratingMessageFor(null);
+      
+      // Verify we got a message back
+      if (!data.message) {
+        console.error("No message in response:", data);
+        toast({
+          title: "Error",
+          description: "Failed to generate personalized message",
+          variant: "destructive",
+        });
+        return;
+      }
+      
       toast({
         title: "Message Generated",
         description: "Personalized message created!",
       });
-      queryClient.invalidateQueries({ queryKey: [`/api/recommendations/${sessionId}`] });
+      
+      // Update the specific recommendation in the cache instead of invalidating
+      // This prevents the page from re-rendering and losing scroll position
+      queryClient.setQueryData<Recommendation[]>(
+        [`/api/recommendations/${sessionId}`],
+        (oldData) => {
+          if (!oldData) return oldData;
+          return oldData.map((rec) => 
+            rec.id === recommendationId
+              ? { ...rec, personalizedMessage: data.message }
+              : rec
+          );
+        }
+      );
     },
     onError: () => {
       setGeneratingMessageFor(null);
