@@ -24,7 +24,7 @@ export default function ChatFinder() {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
-      content: "Hi! I'm GiftAI, your personal gift recommendation assistant! 🎁 I'd love to help you find the perfect gift. Tell me about who you're shopping for - what's the occasion?",
+      content: "Hi! I'm GiftAI, your personal gift recommendation assistant! 🎁 Tell me who you're shopping for and what they like, and I'll find perfect gifts for them!",
       timestamp: new Date().toISOString(),
     },
   ]);
@@ -89,10 +89,10 @@ export default function ChatFinder() {
       // Add AI response
       addMessage("assistant", data.response);
 
-      // If ready to recommend, add a prompt
+      // If ready to recommend, automatically generate recommendations
       if (data.readyToRecommend) {
         await new Promise((resolve) => setTimeout(resolve, 500));
-        addMessage("assistant", "Great! I have all the information I need. Would you like me to find some amazing gift ideas for you? Just say 'yes' or 'find gifts' when you're ready!");
+        await generateRecommendations();
       }
       
     } catch (error) {
@@ -108,17 +108,7 @@ export default function ChatFinder() {
   };
 
   const generateRecommendations = async () => {
-    if (!conversationState.relationship || !conversationState.budget || !conversationState.occasion) {
-      toast({
-        title: "Missing Information",
-        description: "I still need a bit more information to find the perfect gift.",
-        variant: "destructive",
-      });
-      setIsTyping(false);
-      addMessage("assistant", "I still need to know the occasion, your relationship with the recipient, and your budget. Could you tell me more?");
-      return;
-    }
-
+    // Check for essential info (interests only - everything else can have defaults)
     if (conversationState.interests.length === 0) {
       toast({
         title: "Add Interests",
@@ -132,15 +122,16 @@ export default function ChatFinder() {
 
     setIsGenerating(true);
     setIsTyping(false);
-    addMessage("assistant", "Perfect! Let me search Amazon for the best gifts based on everything you've told me... 🎁✨");
+    addMessage("assistant", "Perfect! Let me search Amazon for the best gifts based on what they love... 🎁✨");
 
     try {
+      // Use smart defaults for missing values
       const response = await apiRequest("POST", "/api/recommendations", {
-        relationship: conversationState.relationship,
+        relationship: conversationState.relationship || "friend",
         interests: conversationState.interests,
         personality: conversationState.personality,
-        budget: conversationState.budget,
-        occasion: conversationState.occasion,
+        budget: conversationState.budget || "₹500-₹2000",
+        occasion: conversationState.occasion || "Just Because",
         recipientName: conversationState.recipientName,
         recipientAge: conversationState.recipientAge,
       });
