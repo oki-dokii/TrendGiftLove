@@ -933,10 +933,14 @@ Return ONLY valid JSON in this format:
           const recommendation = item.recommendationId
             ? await storage.getRecommendationById(item.recommendationId)
             : null;
+          
+          // Structure data to match frontend expectations
           return {
             ...item,
-            product,
-            recommendation,
+            recommendation: recommendation ? {
+              ...recommendation,
+              product: product || {}
+            } : null
           };
         })
       );
@@ -963,10 +967,14 @@ Return ONLY valid JSON in this format:
           const recommendation = item.recommendationId
             ? await storage.getRecommendationById(item.recommendationId)
             : null;
+          
+          // Structure data to match frontend expectations
           return {
             ...item,
-            product,
-            recommendation,
+            recommendation: recommendation ? {
+              ...recommendation,
+              product: product || {}
+            } : null
           };
         })
       );
