@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Sparkles } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { saveSessionData } from "@/lib/sessionUtils";
 
 const interests = [
   "Technology", "Books", "Music", "Art", "Sports", "Travel", 
@@ -99,8 +100,8 @@ export default function GiftFinder({ onSuccess }: GiftFinderProps = {}) {
       const data = await response.json();
       
       if (data.sessionId) {
-        // Store request data in localStorage for "Load More" functionality
-        localStorage.setItem(`giftai_request_${data.sessionId}`, JSON.stringify(requestData));
+        // Store request data in localStorage for "Load More" functionality and track current session
+        saveSessionData(data.sessionId, requestData);
         onSuccess?.();
         navigate(`/results/${data.sessionId}`);
       } else {

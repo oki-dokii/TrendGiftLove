@@ -5,13 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, Heart, ShoppingBag, Star, Package, ExternalLink, Trash2, Share2, Copy, Check } from "lucide-react";
-import { useAuth } from "@/hooks/useAuth";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useState } from "react";
+import { getCurrentSessionId } from "@/lib/sessionUtils";
 
 type WishlistItem = {
   id: string;
@@ -44,38 +44,18 @@ type WishlistItem = {
 
 export default function Wishlist() {
   const [, navigate] = useLocation();
-  const { isAuthenticated } = useAuth();
   const { toast } = useToast();
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [isShareDialogOpen, setIsShareDialogOpen] = useState(false);
 
-  // For anonymous users, get the most recent sessionId from localStorage
-  const getRecentSessionId = (): string | null => {
-    if (isAuthenticated) return null;
-    
-    // Find all sessionIds in localStorage
-    const sessionIds: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key?.startsWith('giftai_request_')) {
-        sessionIds.push(key.replace('giftai_request_', ''));
-      }
-    }
-    
-    // Return the most recent one (or null if none exist)
-    return sessionIds.length > 0 ? sessionIds[sessionIds.length - 1] : null;
-  };
+  const sessionId = getCurrentSessionId();
 
-  const sessionId = getRecentSessionId();
-
-  // Fetch wishlist based on auth status
+  // Fetch wishlist based on sessionId
   const { data: wishlistItems, isLoading } = useQuery<WishlistItem[]>({
-    queryKey: isAuthenticated 
-      ? ["/api/wishlist/bucket"] 
-      : sessionId 
-        ? ["/api/wishlist", sessionId]
-        : ["/api/wishlist"],
+    queryKey: sessionId 
+      ? ["/api/wishlist", sessionId]
+      : ["/api/wishlist"],
     enabled: true,
   });
 
@@ -88,10 +68,8 @@ export default function Wishlist() {
         title: "Removed from wishlist",
         description: "Gift removed from your wishlist",
       });
-      // Invalidate appropriate query based on auth status
-      if (isAuthenticated) {
-        queryClient.invalidateQueries({ queryKey: ["/api/wishlist/bucket"] });
-      } else if (sessionId) {
+      // Invalidate wishlist query
+      if (sessionId) {
         queryClient.invalidateQueries({ queryKey: ["/api/wishlist", sessionId] });
       } else {
         queryClient.invalidateQueries({ queryKey: ["/api/wishlist"] });
@@ -112,9 +90,7 @@ export default function Wishlist() {
 
   const shareWishlistMutation = useMutation({
     mutationFn: async () => {
-      const payload = isAuthenticated
-        ? { title: "My Wishlist" }
-        : { sessionId, title: "My Wishlist" };
+      const payload = { sessionId, title: "My Wishlist", description: "Check out my wishlist!" };
       const response = await apiRequest("POST", "/api/wishlist/share", payload);
       return await response.json();
     },

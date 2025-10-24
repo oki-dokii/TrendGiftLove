@@ -8,6 +8,7 @@ import Header from "@/components/Header";
 import type { ChatMessage } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { setCurrentSessionId } from "@/lib/sessionUtils";
 
 interface ConversationState {
   recipientName?: string;
@@ -65,8 +66,8 @@ export default function ChatFinder() {
 
     try {
       // If ready to recommend, generate recommendations
-      if (readyToRecommend) {
-        await generateRecommendations();
+      if (readyToRecommend && conversationState.interests.length > 0) {
+        await generateRecommendations(conversationState);
         return;
       }
 
@@ -128,7 +129,7 @@ export default function ChatFinder() {
         addMessage("assistant", `Awesome! I can see they're interested in ${detectedInterests.join(' and ')}! Let me find the perfect gifts! 🎁`);
         
         await new Promise((resolve) => setTimeout(resolve, 500));
-        await generateRecommendations();
+        await generateRecommendations(updatedState);
         return;
       }
 
@@ -162,11 +163,11 @@ export default function ChatFinder() {
       // Add AI response
       addMessage("assistant", data.response);
 
-      // If ready to recommend, automatically generate recommendations
+      // If ready to recommend, automatically generate recommendations with updated state
       if (data.readyToRecommend && updatedState.interests.length > 0) {
         await new Promise((resolve) => setTimeout(resolve, 500));
         setIsTyping(true);
-        await generateRecommendations();
+        await generateRecommendations(updatedState);
       }
       
     } catch (error) {
@@ -181,11 +182,12 @@ export default function ChatFinder() {
     }
   };
 
-  const generateRecommendations = async () => {
-    console.log('generateRecommendations called with state:', conversationState);
+  const generateRecommendations = async (stateOverride?: ConversationState) => {
+    const currentState = stateOverride || conversationState;
+    console.log('generateRecommendations called with state:', currentState);
     
     // Check for essential info (interests only - everything else can have defaults)
-    if (!conversationState.interests || conversationState.interests.length === 0) {
+    if (!currentState.interests || currentState.interests.length === 0) {
       console.log('No interests found, showing error');
       toast({
         title: "Add Interests",
@@ -198,7 +200,7 @@ export default function ChatFinder() {
       return;
     }
 
-    console.log('Generating recommendations with interests:', conversationState.interests);
+    console.log('Generating recommendations with interests:', currentState.interests);
     setIsGenerating(true);
     setIsTyping(false);
     addMessage("assistant", "Perfect! Let me search Amazon for the best gifts based on what they love... 🎁✨");
@@ -206,16 +208,19 @@ export default function ChatFinder() {
     try {
       // Use smart defaults for missing values
       const response = await apiRequest("POST", "/api/recommendations", {
-        relationship: conversationState.relationship || "friend",
-        interests: conversationState.interests,
-        personality: conversationState.personality,
-        budget: conversationState.budget || "₹500-₹2000",
-        occasion: conversationState.occasion || "Just Because",
-        recipientName: conversationState.recipientName,
-        recipientAge: conversationState.recipientAge,
+        relationship: currentState.relationship || "friend",
+        interests: currentState.interests,
+        personality: currentState.personality,
+        budget: currentState.budget || "₹500-₹2000",
+        occasion: currentState.occasion || "Just Because",
+        recipientName: currentState.recipientName,
+        recipientAge: currentState.recipientAge,
       });
 
       const data = await response.json();
+      
+      // Save the current sessionId
+      setCurrentSessionId(data.sessionId);
       
       queryClient.invalidateQueries({ queryKey: ["/api/recommendations", data.sessionId] });
       
