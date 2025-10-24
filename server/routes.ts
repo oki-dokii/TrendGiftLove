@@ -60,6 +60,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       message = parsed.message;
       conversationState = parsed.conversationState;
       
+      // CRITICAL CHECK: If we already have interests and user is confirming/proceeding, skip AI and recommend immediately
+      const hasInterests = conversationState.interests && conversationState.interests.length > 0;
+      const messageLower = message.toLowerCase().trim();
+      const proceedKeywords = ['yes', 'sure', 'ok', 'okay', 'go ahead', 'find', 'search', 'show', 'get', 'recommend', 'suggest', 'please'];
+      const isProceedingMessage = proceedKeywords.some(keyword => messageLower.includes(keyword));
+      
+      if (hasInterests && isProceedingMessage) {
+        // User has interests and wants to proceed - skip AI, go straight to recommendations
+        return res.json({
+          response: "Perfect! Let me find amazing gifts based on what you've told me!",
+          conversationState: {
+            ...conversationState,
+            budget: conversationState.budget || "₹500-₹2000",
+            occasion: conversationState.occasion || "Just Because",
+            relationship: conversationState.relationship || "friend",
+          },
+          readyToRecommend: true,
+        });
+      }
+      
       // Use AI to process the message and extract/update information
       const systemPrompt = `You are GiftAI, a helpful and conversational AI assistant specialized in gift recommendations. Chat naturally like ChatGPT or Gemini - be friendly, warm, and understanding.
 
@@ -135,25 +155,40 @@ Respond with JSON containing:
 
 USER'S NEW MESSAGE: "${message}"
 
+⚠️ CRITICAL INSTRUCTIONS - READ CAREFULLY:
+${conversationState.interests && conversationState.interests.length > 0 
+  ? `
+🚨 YOU ALREADY HAVE INTERESTS: ${conversationState.interests.join(', ')}
+🚨 UNDER NO CIRCUMSTANCES SHOULD YOU ASK FOR INTERESTS AGAIN!
+🚨 The user has ALREADY provided this information!
+🚨 You MUST set readyToRecommend=true and proceed to recommendations!
+🚨 DO NOT ask ANY questions - just acknowledge and prepare to recommend!
+
+YOUR RESPONSE SHOULD:
+- Acknowledge what they said
+- Confirm you're ready to find gifts
+- Set readyToRecommend=true
+- Fill any missing fields with defaults:
+  * budget: "${conversationState.budget || '₹500-₹2000'}"
+  * occasion: "${conversationState.occasion || 'Just Because'}"
+  * relationship: "${conversationState.relationship || 'friend'}"
+
+EXAMPLE RESPONSE: "Perfect! I'll find amazing gifts for your ${conversationState.interests.join(' and ')} enthusiast right away!"
+`
+  : `
+You DON'T have interests yet. Extract them from: "${message}"
+- Look for patterns like "X lover", "loves X", "interested in X", etc.
+- If you find ANY interest, set readyToRecommend=true immediately
+- If no interests found, ask ONLY: "What are they interested in?"
+`}
+
 STEP 1 - ANALYZE WHAT YOU ALREADY HAVE:
 ${conversationState.interests && conversationState.interests.length > 0 
-  ? `✓ You ALREADY HAVE interests: ${conversationState.interests.join(', ')} - DO NOT ASK FOR THEM AGAIN!`
-  : '✗ You need to extract interests from the message'}
-${conversationState.budget ? `✓ You already have budget: ${conversationState.budget}` : ''}
-${conversationState.occasion ? `✓ You already have occasion: ${conversationState.occasion}` : ''}
-${conversationState.relationship ? `✓ You already have relationship: ${conversationState.relationship}` : ''}
-
-STEP 2 - DECISION LOGIC:
-${conversationState.interests && conversationState.interests.length > 0 
-  ? `Since you ALREADY HAVE interests (${conversationState.interests.join(', ')}), you should:
-  - Set readyToRecommend=true IMMEDIATELY
-  - Fill missing fields with defaults (budget="₹500-₹2000", occasion="Just Because", relationship="friend")
-  - Respond enthusiastically that you're ready to find gifts
-  - DO NOT ask any more questions - you have everything you need!`
-  : `Since you DON'T have interests yet:
-  - Try to extract interests from this message
-  - If you find interests, set readyToRecommend=true
-  - If no interests in message, ask ONLY for their interests (nothing else)`}
+  ? `✓ INTERESTS: ${conversationState.interests.join(', ')} ← YOU HAVE THIS!`
+  : '✗ No interests yet - extract from message'}
+${conversationState.budget ? `✓ BUDGET: ${conversationState.budget} ← YOU HAVE THIS!` : '✗ No budget (use default: ₹500-₹2000)'}
+${conversationState.occasion ? `✓ OCCASION: ${conversationState.occasion} ← YOU HAVE THIS!` : '✗ No occasion (use default: Just Because)'}
+${conversationState.relationship ? `✓ RELATIONSHIP: ${conversationState.relationship} ← YOU HAVE THIS!` : '✗ No relationship (use default: friend)'}
 
 EXAMPLES:
 Message: "cricket fan"
@@ -225,13 +260,21 @@ Return ONLY valid JSON.`;
 
       const result = JSON.parse(content);
       
-      // Merge extracted info with conversation state
+      // Merge extracted info with conversation state - preserve existing values unless new ones are explicitly provided
       const updatedState = {
         ...conversationState,
         ...result.extractedInfo,
+        // CRITICAL: Never lose existing interests - only add/replace if new ones are found
         interests: result.extractedInfo.interests?.length > 0 
           ? result.extractedInfo.interests 
           : conversationState.interests,
+        // Preserve other existing fields unless AI explicitly updates them
+        budget: result.extractedInfo.budget || conversationState.budget,
+        occasion: result.extractedInfo.occasion || conversationState.occasion,
+        relationship: result.extractedInfo.relationship || conversationState.relationship,
+        personality: result.extractedInfo.personality || conversationState.personality,
+        recipientName: result.extractedInfo.recipientName || conversationState.recipientName,
+        recipientAge: result.extractedInfo.recipientAge || conversationState.recipientAge,
       };
 
       // SAFETY CHECK: If we have interests and user seems ready, force readyToRecommend=true
@@ -314,6 +357,7 @@ Return ONLY valid JSON.`;
       const hasInterests = hasExistingInterests || detectedInterests.length > 0;
       
       // Check if user wants to proceed (common proceed keywords)
+      const messageLower = message.toLowerCase();
       const proceedKeywords = ['yes', 'sure', 'ok', 'okay', 'go ahead', 'find', 'search', 'show', 'get', 'recommend', 'suggest'];
       const wantsToProceed = proceedKeywords.some(keyword => messageLower.includes(keyword));
       
@@ -1103,7 +1147,7 @@ Return ONLY valid JSON in this format:
       
       const item = await storage.addToWishlist(itemData);
       
-      // Enrich with product details
+      // Enrich with product and recommendation details
       const product = item.productId 
         ? await storage.getGiftById(item.productId) 
         : null;
@@ -1111,11 +1155,24 @@ Return ONLY valid JSON in this format:
         ? await storage.getRecommendationById(item.recommendationId)
         : null;
       
-      res.json({
+      // Structure data to match frontend expectations (same format as GET endpoints)
+      const enrichedItem = {
         ...item,
-        product,
-        recommendation,
-      });
+        recommendation: recommendation ? {
+          ...recommendation,
+          product: product ? {
+            ...product,
+            // Convert string booleans to actual booleans for frontend
+            isPrime: product.isPrime === "true",
+            isBestSeller: product.isBestSeller === "true",
+            isAmazonChoice: product.isAmazonChoice === "true",
+            // Parse numeric ratings if stored as strings
+            amazonNumRatings: product.amazonNumRatings ? parseInt(product.amazonNumRatings) : null,
+          } : {}
+        } : null
+      };
+      
+      res.json(enrichedItem);
       
     } catch (error) {
       console.error("Error adding to wishlist:", error);
@@ -1240,6 +1297,109 @@ Return ONLY valid JSON in this format:
     } catch (error) {
       console.error("Error removing from wishlist:", error);
       res.status(500).json({ error: "Failed to remove from wishlist" });
+    }
+  });
+
+  // POST /api/wishlist/share - Create a shareable wishlist link
+  app.post("/api/wishlist/share", async (req: any, res) => {
+    try {
+      const shareSchema = z.object({
+        sessionId: z.string().optional(),
+        title: z.string().optional(),
+        description: z.string().optional(),
+      });
+      
+      const data = shareSchema.parse(req.body);
+      const userId = req.isAuthenticated() ? req.user.claims.sub : null;
+      
+      // Validate that we have either userId or sessionId
+      if (!userId && !data.sessionId) {
+        return res.status(400).json({ error: "Either user authentication or session ID is required" });
+      }
+      
+      // Generate unique share token
+      const shareToken = randomUUID().replace(/-/g, '').substring(0, 12);
+      
+      const sharedWishlist = await storage.createSharedWishlist({
+        shareToken,
+        userId: userId || null,
+        sessionId: userId ? null : (data.sessionId || null),
+        title: data.title || null,
+        description: data.description || null,
+      });
+      
+      res.json({
+        ...sharedWishlist,
+        shareUrl: `${req.protocol}://${req.get('host')}/shared/${shareToken}`,
+      });
+      
+    } catch (error) {
+      console.error("Error creating shareable wishlist:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          error: "Invalid request data", 
+          details: error.errors 
+        });
+      }
+      res.status(500).json({ error: "Failed to create shareable wishlist" });
+    }
+  });
+
+  // GET /api/wishlist/shared/:token - Get wishlist by share token
+  app.get("/api/wishlist/shared/:token", async (req, res) => {
+    try {
+      const { token } = req.params;
+      const sharedWishlist = await storage.getSharedWishlistByToken(token);
+      
+      if (!sharedWishlist) {
+        return res.status(404).json({ error: "Shared wishlist not found" });
+      }
+      
+      // Increment view count
+      await storage.incrementWishlistViewCount(sharedWishlist.id);
+      
+      // Get wishlist items
+      const items = await storage.getWishlistItemsBySharedWishlist(sharedWishlist.id);
+      
+      // Enrich with product and recommendation details
+      const enriched = await Promise.all(
+        items.map(async (item) => {
+          const product = item.productId 
+            ? await storage.getGiftById(item.productId) 
+            : null;
+          const recommendation = item.recommendationId
+            ? await storage.getRecommendationById(item.recommendationId)
+            : null;
+          
+          return {
+            ...item,
+            recommendation: recommendation ? {
+              ...recommendation,
+              product: product ? {
+                ...product,
+                isPrime: product.isPrime === "true",
+                isBestSeller: product.isBestSeller === "true",
+                isAmazonChoice: product.isAmazonChoice === "true",
+                amazonNumRatings: product.amazonNumRatings ? parseInt(product.amazonNumRatings) : null,
+              } : {}
+            } : null
+          };
+        })
+      );
+      
+      res.json({
+        wishlist: {
+          title: sharedWishlist.title,
+          description: sharedWishlist.description,
+          viewCount: sharedWishlist.viewCount,
+          createdAt: sharedWishlist.createdAt,
+        },
+        items: enriched,
+      });
+      
+    } catch (error) {
+      console.error("Error fetching shared wishlist:", error);
+      res.status(500).json({ error: "Failed to fetch shared wishlist" });
     }
   });
 

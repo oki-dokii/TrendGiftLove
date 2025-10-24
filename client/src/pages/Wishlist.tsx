@@ -4,11 +4,14 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Heart, ShoppingBag, Star, Package, ExternalLink, Trash2 } from "lucide-react";
+import { ArrowLeft, Heart, ShoppingBag, Star, Package, ExternalLink, Trash2, Share2, Copy, Check } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { useState } from "react";
 
 type WishlistItem = {
   id: string;
@@ -43,6 +46,9 @@ export default function Wishlist() {
   const [, navigate] = useLocation();
   const { isAuthenticated } = useAuth();
   const { toast } = useToast();
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [isShareDialogOpen, setIsShareDialogOpen] = useState(false);
 
   // For anonymous users, get the most recent sessionId from localStorage
   const getRecentSessionId = (): string | null => {
@@ -104,6 +110,43 @@ export default function Wishlist() {
     removeFromWishlistMutation.mutate(itemId);
   };
 
+  const shareWishlistMutation = useMutation({
+    mutationFn: async () => {
+      const payload = isAuthenticated
+        ? { title: "My Wishlist" }
+        : { sessionId, title: "My Wishlist" };
+      const response = await apiRequest("POST", "/api/wishlist/share", payload);
+      return await response.json();
+    },
+    onSuccess: (data) => {
+      setShareUrl(data.shareUrl);
+      setIsShareDialogOpen(true);
+      toast({
+        title: "Shareable Link Created",
+        description: "Your wishlist can now be shared with anyone!",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to create shareable link",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleCopyLink = () => {
+    if (shareUrl) {
+      navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      toast({
+        title: "Copied!",
+        description: "Share link copied to clipboard",
+      });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-accent/5">
       {/* Header */}
@@ -123,6 +166,53 @@ export default function Wishlist() {
             <Heart className="h-5 w-5 fill-primary" />
             <span className="font-semibold text-base">My Wishlist</span>
           </div>
+          
+          {wishlistItems && wishlistItems.length > 0 && (
+            <Dialog open={isShareDialogOpen} onOpenChange={setIsShareDialogOpen}>
+              <DialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  onClick={() => shareWishlistMutation.mutate()}
+                  disabled={shareWishlistMutation.isPending}
+                  className="gap-2"
+                  data-testid="button-share-wishlist"
+                >
+                  <Share2 className="h-4 w-4" />
+                  <span className="hidden sm:inline">Share</span>
+                </Button>
+              </DialogTrigger>
+              <DialogContent data-testid="dialog-share">
+                <DialogHeader>
+                  <DialogTitle>Share Your Wishlist</DialogTitle>
+                  <DialogDescription>
+                    Anyone with this link can view your wishlist
+                  </DialogDescription>
+                </DialogHeader>
+                {shareUrl && (
+                  <div className="space-y-4">
+                    <div className="flex gap-2">
+                      <Input
+                        value={shareUrl}
+                        readOnly
+                        data-testid="input-share-url"
+                      />
+                      <Button
+                        onClick={handleCopyLink}
+                        variant="outline"
+                        size="icon"
+                        data-testid="button-copy-link"
+                      >
+                        {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Share this link with friends and family to show them your gift preferences!
+                    </p>
+                  </div>
+                )}
+              </DialogContent>
+            </Dialog>
+          )}
         </div>
       </div>
 
