@@ -1139,8 +1139,18 @@ Return ONLY valid JSON in this format:
         return res.status(400).json({ error: "Either user authentication or session ID is required" });
       }
       
+      // Auto-populate productId from recommendation if not provided
+      let productId = data.productId;
+      if (!productId && data.recommendationId) {
+        const recommendation = await storage.getRecommendationById(data.recommendationId);
+        if (recommendation?.productId) {
+          productId = recommendation.productId;
+        }
+      }
+      
       const itemData = {
         ...data,
+        productId: productId || null,
         userId: userId || null,
         sessionId: userId ? null : (data.sessionId || null),
       };

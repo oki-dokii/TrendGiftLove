@@ -45,8 +45,11 @@ type SharedWishlistData = {
 
 export default function PublicWishlistPage() {
   const [, navigate] = useLocation();
-  const [, params] = useRoute("/wishlist/shared/:token");
-  const token = params?.token;
+  
+  // Try both route patterns
+  const [, paramsLong] = useRoute("/wishlist/shared/:token");
+  const [, paramsShort] = useRoute("/shared/:token");
+  const token = paramsLong?.token || paramsShort?.token;
 
   const { data: wishlistData, isLoading } = useQuery<SharedWishlistData>({
     queryKey: [`/api/wishlist/shared/${token}`],

@@ -23,6 +23,7 @@ function Router() {
       <Route path="/chat" component={ChatFinder} />
       <Route path="/trending" component={TrendingPage} />
       <Route path="/recipients" component={RecipientProfilesPage} />
+      <Route path="/shared/:token" component={PublicWishlistPage} />
       <Route path="/wishlist/shared/:token" component={PublicWishlistPage} />
       <Route component={NotFound} />
     </Switch>
