@@ -70,11 +70,11 @@ export default function GiftFinder({ onSuccess }: GiftFinderProps = {}) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validate required fields
-    if (!formData.relationship || formData.interests.length === 0 || !formData.budget || !formData.occasion) {
+    // Ensure at least one interest or basic info is provided
+    if (formData.interests.length === 0 && !formData.name && !formData.relationship) {
       toast({
         title: "Missing Information",
-        description: "Please fill in relationship, at least one interest, budget, and occasion.",
+        description: "Please select at least one interest to find gifts.",
         variant: "destructive",
       });
       return;
@@ -87,11 +87,11 @@ export default function GiftFinder({ onSuccess }: GiftFinderProps = {}) {
       const requestData = {
         recipientName: formData.name || undefined,
         recipientAge: formData.age ? parseInt(formData.age) : undefined,
-        relationship: formData.relationship,
-        interests: formData.interests,
+        relationship: formData.relationship || "friend",
+        interests: formData.interests.length > 0 ? formData.interests : ["General"],
         personality: formData.personality || undefined,
-        budget: formData.budget,
-        occasion: formData.occasion,
+        budget: formData.budget || "₹500 - ₹2000",
+        occasion: formData.occasion || "Just Because",
       };
       
       // This now uses Amazon products with AI-generated suggestions
@@ -107,17 +107,18 @@ export default function GiftFinder({ onSuccess }: GiftFinderProps = {}) {
       } else {
         throw new Error("No session ID returned");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error generating recommendations:", error);
       toast({
         title: "Error",
-        description: "Failed to generate recommendations. Please try again.",
+        description: error?.message || "Failed to generate recommendations. Please try again.",
         variant: "destructive",
       });
     } finally {
       setIsLoading(false);
     }
   };
+
 
   return (
     <section id="gift-finder" className="py-16 lg:py-24 bg-gradient-to-br from-primary/5 to-chart-2/5">
@@ -234,7 +235,7 @@ export default function GiftFinder({ onSuccess }: GiftFinderProps = {}) {
                     </SelectTrigger>
                     <SelectContent>
                       {occasions.map((occasion) => (
-                        <SelectItem key={occasion} value={occasion.toLowerCase()}>
+                        <SelectItem key={occasion} value={occasion}>
                           {occasion}
                         </SelectItem>
                       ))}

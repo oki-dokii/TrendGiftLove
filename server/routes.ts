@@ -556,13 +556,14 @@ Return ONLY valid JSON.`;
             productId = rec.amazonProduct.asin;
             product = (await storage.getGiftById(productId))!;
           } else {
-            // Create a new product record for this Amazon product
+            const rawPrice = (rec.amazonProduct?.price || '0').toString().replace(/[^0-9.]/g, '');
+            const parsedPrice = Math.round(parseFloat(rawPrice)) || 0;
             const amazonProduct = await storage.createGiftProduct({
               name: rec.amazonProduct.title,
               description: rec.aiReasoning,
               category: "Amazon Product",
-              priceMin: Math.round(parseFloat(rec.amazonProduct.price.replace(/[^0-9.]/g, '')) || 0),
-              priceMax: Math.round(parseFloat(rec.amazonProduct.price.replace(/[^0-9.]/g, '')) || 0),
+              priceMin: parsedPrice,
+              priceMax: parsedPrice,
               interests: request.interests,
               occasions: [request.occasion],
               relationship: [request.relationship],
@@ -730,13 +731,14 @@ Return ONLY valid JSON.`;
       const savedRecommendations = [];
       for (const rec of amazonRecommendations) {
         try {
-          // Create a minimal product record for this Amazon product
+          const rawPrice = (rec.amazonProduct?.price || '0').toString().replace(/[^0-9.]/g, '');
+          const parsedPrice = Math.round(parseFloat(rawPrice)) || 0;
           const amazonProduct = await storage.createGiftProduct({
             name: rec.amazonProduct.title,
             description: rec.aiReasoning,
             category: "Amazon Product",
-            priceMin: Math.round(parseFloat(rec.amazonProduct.price.replace(/[^0-9.]/g, '')) || 0),
-            priceMax: Math.round(parseFloat(rec.amazonProduct.price.replace(/[^0-9.]/g, '')) || 0),
+            priceMin: parsedPrice,
+            priceMax: parsedPrice,
             interests: request.interests,
             occasions: [request.occasion],
             relationship: [request.relationship],
